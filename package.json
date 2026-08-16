@@ -55,12 +55,15 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
+    "README.zh.md",
+    "README.i18n.yaml",
     "LICENSE",
     "docs"
   ],
   "scripts": {
+    "docs:pair": "node scripts/i18n-pair.mjs",
     "check": "node --check lib/index.js && node --check lib/pricing.js && node --check lib/attribution.js && node --check lib/client.js && node --check lib/projection.js && node --check lib/hostkit.js",
-    "test": "node tests/pricing.test.js && node tests/attribution.test.js && node tests/client.test.js && node tests/rollup.test.js && node tests/projection.test.js",
+    "test": "node tests/pricing.test.js && node tests/attribution.test.js && node tests/client.test.js && node tests/rollup.test.js && node tests/projection.test.js && node scripts/i18n-pair.mjs",
     "prepublishOnly": "npm run check && npm test"
   },
   "peerDependencies": {

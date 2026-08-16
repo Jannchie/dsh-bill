@@ -1,85 +1,89 @@
 # dsh-bill
 
-DSH(DeepSeek Harness)的费用统计插件。每轮对话下面看这轮花了多少,「费用」标签页看花在了什么上。
+English | [中文](README.zh.md)
 
-![成本归因](docs/attribution.png)
+Cost tracking for DSH (DeepSeek Harness). A line under each turn tells you what that turn cost; the **Cost** tab tells you what the money went on.
 
-## 安装
+![Per-turn cost in the conversation](docs/in-chat.png)
+
+![Cost attribution](docs/attribution.png)
+
+## Install
 
 ```bash
 dsh plugin --profile web add dsh-bill
 ```
 
-重启 `dsh web` 生效。
+Restart `dsh web` to pick it up.
 
-## 功能
+## Features
 
-- **成本归因** —— 按内容类型拆分账单:工具输出、模型输出、系统提示词、终端命令(按 `git` / `pnpm` / `rg` 分组)、工具输入、附件、系统提醒、用户输入。旭日图可下钻。
-- **每轮成本** —— 每个结束的轮次下面一行:这轮花了多少、几步、缓存命中率。数据来自会话日志本身,所以安装前的历史也有。
-- **常驻显示** —— 官方统计条下方一行:总消耗、本会话、高峰占比;侧边栏显示今日花费与预算进度。
-- **报告** —— 会话内的「费用」标签页(与 Chat / Trajectory 并列):总费用、Token、缓存命中、高峰占比、月度预测、账户余额;按模型 / 会话 / 用途(含上下文压缩等循环开销)拆分;每日趋势与周 × 小时热力图。
-- **预算** —— 日 / 月 / 累计额度,超 80% 变黄,超支变红。
-- **多币种** —— 实时汇率,约 166 种货币;各模型基础单价按其官方定价货币显示。
-- **agent 工具** —— `bill_stats`,模型可直接回答花费相关的问题。
-- 中英文跟随 DSH 语言设置;安装前的历史可从会话日志回填。
+- **Cost attribution** — the bill split by kind of content: tool output, model output, system prompt, terminal commands (grouped by `git` / `pnpm` / `rg`), tool input, attachments, system reminders, user input. The sunburst drills in.
+- **Per-turn cost** — one line under every finished turn: what it cost, how many steps, the cache-hit rate. It reads the session log itself, so turns from before you installed the plugin are covered too.
+- **Always on screen** — a line under the shipped stats line (all-time, this session, peak share), and today's spend against the budget in the sidebar.
+- **Report** — a **Cost** tab in the conversation, beside Chat and Trajectory: total, tokens, cache hit, peak share, monthly forecast, account balance; broken down by model, by session, and by purpose (including loop overhead such as context compaction); a daily trend and a weekday × hour heatmap.
+- **Budget** — a daily / monthly / all-time limit that turns amber past 80% and red when you go over.
+- **Multi-currency** — live rates for ~166 currencies; each model's base rate is shown in the currency its vendor prices it in.
+- **Agent tool** — `bill_stats`, so the model can answer questions about spend directly.
+- English and Chinese follow the DSH language setting; history from before the install is backfilled from the session log.
 
-## 与同类插件的差异
+## How it differs from similar plugins
 
-三处实质差异:
+Three substantive differences:
 
-**不用手编价格。** 其余插件都内置 2–4 个 DeepSeek 型号的价格表,换个 provider 就没有价格,因此它们都需要一个「手工编辑价格表」的入口。dsh-bill 通过 [`llm-pricing`](https://github.com/Jannchie/llm-pricing) 拉取 models.dev 与 OpenRouter,覆盖 8000+ 条目,新模型上线即可计价。
+**No hand-maintained price table.** Every other plugin ships a built-in table of 2–4 DeepSeek models, which means no prices at all once you switch provider — and which is why they all need a "edit the price table by hand" entry point. dsh-bill pulls models.dev and OpenRouter through [`llm-pricing`](https://github.com/Jannchie/llm-pricing), covering 8000+ entries, so a new model is priced the day it ships.
 
-**价格是时间轴。** 其余插件把价格算成一个数存下来(或按当前价重算),厂商调价、跨越峰谷边界时历史就不准了。dsh-bill 按每次调用自己的时刻定价,历史永不重算。
+**Price is a timeline, not a number.** The others compute a cost and store it (or recompute at today's price), so history goes wrong the moment a vendor changes its rates or a call crosses a peak/off-peak boundary. dsh-bill prices each call at that call's own instant, and never recomputes history.
 
-**回答「花在什么上」。** 其余插件只回答「花了多少」——它们只消费 provider 汇总的 token 计数,不看请求内容。dsh-bill 在捕获时把请求切成分类片段,按缓存前缀位置分摊费用。
+**It answers "on what".** The others answer only "how much" — they consume the provider's aggregate token counts and never look at the request content. dsh-bill splits the request into classified segments at capture time and apportions cost by position in the cache prefix.
 
-也有它们做得更好的地方:`usage-stats` 支持 11 种 provider 的余额与订阅额度(dsh-bill 只有 DeepSeek),`cost-meter` 能读取 OpenCode Go 的订阅配额,两者的常驻入口也比 dsh-bill 多。
+They do some things better: `usage-stats` reads balances and subscription quotas from 11 providers (dsh-bill only does DeepSeek), `cost-meter` can read OpenCode Go's subscription quota, and both surface more always-on entry points than dsh-bill does.
 
 <details>
-<summary>逐项对比(按源码实测,取样于 2026-08-16)</summary>
+<summary>Point-by-point comparison (read from source, sampled 2026-08-16)</summary>
 
-取样为 GitHub `dsh-plugin` topic 下 star ≥ 40 的费用类插件,以及 npm 上已发布的四个。`deepseek-harness-wallet` 等 star 较低的插件未逐一核对。
+The sample is the cost-related plugins under the GitHub `dsh-plugin` topic with ★ ≥ 40, plus the four published to npm. Lower-starred plugins such as `deepseek-harness-wallet` were not checked individually.
 
 | | dsh-bill | cost-meter | usage-stats | dsh-cost | cost-log | dsh-usage | usage-billing |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| star / 版本 | — | ★42 / 1.3.1 | ★40 / 0.2.0 | ★3 / 0.2.1 | ★2 / 1.0.0 | ★2 / 0.1.1 | 0.2.2 |
-| 价格来源 | 在线目录 | 内置表 + 手动爬文档页 | 不计价 | 内置表 | 内置表 | 用户自填 | 内置表 |
-| 覆盖模型 | 8000+ 条目 | 4 个 DeepSeek | — | 4 个 DeepSeek | 2 个 DeepSeek | 逐个手填 | DeepSeek |
-| 未收录模型 | 标记不计入 | 按 flash 价计 | 标记未知 | 按 v4-pro 计 | 标记 `≈` | 标记 `--` | 计 0 |
-| 历史不被重算 | ✓ | ✗ | — | ✗ | ✓ | ✓ | 需手动回填 |
-| 内容归因 | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| 成本预测 | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| 预算 | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| 账户余额 | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ |
-| 安装前历史 | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ |
-| agent 工具 | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
-| 多币种 | 166 种,实时汇率 | 3 种,固定汇率 | — | 随界面语言 | ¥/$ | 单一货币 | 仅 ¥ |
+| stars / version | — | ★42 / 1.3.1 | ★40 / 0.2.0 | ★3 / 0.2.1 | ★2 / 1.0.0 | ★2 / 0.1.1 | 0.2.2 |
+| price source | online catalogue | built-in table + hand-scraped docs | none | built-in table | built-in table | user-entered | built-in table |
+| models covered | 8000+ entries | 4 DeepSeek | — | 4 DeepSeek | 2 DeepSeek | one at a time, by hand | DeepSeek |
+| unlisted model | flagged, excluded from totals | billed at flash rate | flagged unknown | billed as v4-pro | flagged `≈` | flagged `--` | counted as 0 |
+| history never recomputed | ✓ | ✗ | — | ✗ | ✓ | ✓ | manual backfill |
+| content attribution | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| forecast | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| budget | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| account balance | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ |
+| pre-install history | ✓ | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ |
+| agent tool | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
+| currencies | 166, live rates | 3, fixed rates | — | follows UI language | ¥/$ | single | ¥ only |
 
 </details>
 
-## 计价
+## Pricing
 
-- models.dev + OpenRouter 双目录,24h 缓存并落盘,失败回退内置历史快照;
-- DeepSeek 官方直连价覆盖目录报价,按调用时刻自动选择峰谷价;
-- 模型名归一化,匹配不到的标记为「?」,不参与合计 —— 不估算;
-- `priceOverrides` 可覆盖或新增任意价格(通常用不到)。
+- two catalogues, models.dev and OpenRouter, cached for 24h and written to disk, falling back to a built-in historical snapshot on failure;
+- DeepSeek's own direct rates override the catalogue, and the peak / off-peak rate is chosen from the call's timestamp;
+- model names are normalised, and anything that still fails to match is flagged `?` and excluded from totals — nothing is estimated;
+- `priceOverrides` can override or add any price (rarely needed).
 
-## 归因方法
+## Attribution method
 
-每次请求都要为完整上下文重新付费,因此一次读入的工具输出会在后续每次请求中继续计费,直到滑出上下文。归因逐请求计算后累加。
+Every request pays for the full context again, so one tool output read into the conversation keeps being billed on every subsequent request until it slides out of the window. Attribution is computed per request and summed.
 
-两个关键点:
+Two things matter:
 
-- **按位置定价。** 前缀缓存下,prompt 的前 N 个 token 走缓存价,其余走全价 —— DeepSeek 上两者相差最多 156×。内容片段严格按 provider 接收顺序排列,缓存前缀按缓存价计,仅尾部付全价。按平均单价分摊会把费用记到错误的类别上。
-- **只保留计数。** 归因在捕获时对实时请求完成,落盘仅保存各类别金额,不保存任何 prompt 文本。
+- **Price by position.** Under prefix caching the first N tokens of the prompt bill at the cache rate and the rest at full rate — on DeepSeek the two differ by up to 156×. Segments are ordered exactly as the provider received them, the cached prefix is charged at the cache rate, and only the tail pays full price. Apportioning by an average unit price files the money under the wrong category.
+- **Counts only.** Attribution happens at capture time on the live request; only the per-category amounts are written to disk. No prompt text is stored.
 
-各片段的 token 数按字符占比估算(provider 只返回总数),总额取真实计费值,因此各项精确加总到实付金额。
+Per-segment token counts are estimated from character share (providers return only a total), and the total is the real billed figure, so the parts sum exactly to what you paid.
 
-会话日志里只有 token 计数与模型路由,**没有请求正文** —— 所以安装前的历史能回填出费用,但**归因无法追溯**。报告会标注已覆盖比例。
+The session log holds token counts and model routes but **not the request bodies** — which is why pre-install history can be backfilled as spend, but **cannot be attributed retroactively**. The report states what fraction is covered.
 
-## 配置
+## Configuration
 
-预算在设置里的「费用统计」页设定。`maxRecords`(内存环形缓冲条数,默认 20000)与 `priceOverrides` 走插件配置,会在启动时校验 —— 写错的字段会指名报错,而不是让报告静静地空掉。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
+The budget is set on the **Cost** page in settings. `maxRecords` (the in-memory ring buffer size, default 20000) and `priceOverrides` are plugin config and are validated at startup — a mistyped field is reported by name rather than leaving the report quietly empty. `~/.dsh/profiles/web/cordis.patch.yml` is only needed when you want to override a price:
 
 ```yaml
 - insert:
@@ -88,30 +92,30 @@ dsh plugin --profile web add dsh-bill
       config:
         priceOverrides:
           'anthropic/claude-sonnet-4-6':
-            inputPerM: 3.0        # 每百万 token 输入(未命中),USD
+            inputPerM: 3.0        # USD per million input tokens (uncached)
             outputPerM: 15.0
             cacheReadPerM: 0.3
             cacheWritePerM: 3.75
 ```
 
-## 数据与隐私
+## Data and privacy
 
-- 记录每次调用的 provider / model / token 用量及归因金额,落盘至 `$DSH_HOME/dsh-bill/records.jsonl`(2 万条环形缓冲,更早的折叠为汇总);
-- 账户余额的 API key 在 host 侧解析与使用,不进入浏览器;
-- 除价格目录、汇率接口与余额查询外不发送任何数据;不保存任何对话内容。
+- each call's provider / model / token usage and attributed amounts are written to `$DSH_HOME/dsh-bill/records.jsonl` (a 20 000-entry ring buffer; older entries are folded into a rollup);
+- the API key used for the account balance is read and used host-side and never reaches the browser;
+- nothing is sent anywhere except the price catalogues, the exchange-rate endpoint, and the balance query; no conversation content is stored.
 
-## 实现
+## Implementation
 
-| 层 | 实现 |
+| Layer | How |
 | --- | --- |
-| 捕获 | 监听 `llm/stream` waterfall,包装流观察 `usage` chunk,原样透传 |
-| 计价 | 按调用时刻交由 `llm-pricing` 解析目录 / 峰谷 / 覆盖价 |
-| 归因 | 捕获时切分请求为分类片段,按缓存前缀位置分摊 |
-| 回填 | 扫描会话日志导入未记录的会话,按 `turn:step` 去重 |
-| 每轮 | `billTurns` session projection:host 侧折叠会话日志,推送到客户端,无轮询 |
-| 存储 | 内存环形缓冲 + 追加式 JSONL,淘汰前折叠为汇总;原子替换与文件锁复用 `dsh-atomic-write` |
-| 传输 | 优先 `ctx.connection.rpc` 通道 `/dsh-bill`,回落 `POST /dsh-bill/api` |
-| UI | `conversation.view` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `settings.section` |
+| Capture | hooks the `llm/stream` waterfall, wraps the stream to observe `usage` chunks, passes everything through untouched |
+| Pricing | `llm-pricing` resolves catalogue / peak rate / override at the call's own instant |
+| Attribution | the request is split into classified segments at capture time and apportioned by position in the cache prefix |
+| Backfill | scans the session log for sessions it never recorded, deduplicating on `turn:step` |
+| Per turn | the `billTurns` session projection folds the session log host-side and pushes to the client — no polling |
+| Storage | in-memory ring buffer plus append-only JSONL, folded into a rollup before eviction; atomic replace and file locking borrowed from `dsh-atomic-write` |
+| Transport | the `ctx.connection.rpc` channel `/dsh-bill` when there is one, falling back to `POST /dsh-bill/api` |
+| UI | `conversation.view` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `settings.section`, built on the host's `--dsw-*` design tokens |
 
 ## License
 
