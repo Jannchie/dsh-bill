@@ -38,9 +38,9 @@ jobs:
       # ...and npm >= 11.5.1, which is newer than what the runner ships.
       - run: npm install -g npm@latest
 
-      # `npm ci` needs a lockfile in sync; this package has one runtime
-      # dependency, so a plain install is enough and cannot drift.
-      - run: npm install --no-audit --no-fund
+      # `npm ci` over `npm install`: it installs exactly the committed
+      # lockfile and fails loudly if the two ever disagree.
+      - run: npm ci --no-audit --no-fund
 
       # A tag that disagrees with package.json publishes a version nobody
       # asked for, under a tag pointing at different code. Fail loudly.
