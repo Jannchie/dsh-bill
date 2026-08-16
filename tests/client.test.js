@@ -32,6 +32,7 @@ globalThis.window = {
         useState: () => [null, () => {}],
         useEffect: () => {},
         useMemo: (fn) => fn(),
+        useCallback: (fn) => fn,
       }))
     },
   },
@@ -40,6 +41,51 @@ await import(clientPath)
 assert(exported !== null, 'the module loader factory ran')
 assert(typeof exported.apply === 'function', 'exports apply()')
 assert(Array.isArray(exported.inject) && exported.inject.includes('slots'), 'injects the slots service')
+
+console.log('slot registrations')
+// Running apply() against a stub slot registry proves the seats this half
+// claims — a typo in a slot key never renders and never errors, so the only
+// place it can be caught is here.
+const registered = []
+const seats = []
+exported.apply({
+  get: (name) => (name === 'slots'
+    ? {
+        inject: (key, effect) => { seats.push(key); effect() },
+        register: (options) => { registered.push(options); return () => {} },
+      }
+    : undefined),
+  effect: () => {},
+})
+const seatOf = (name) => registered.find((o) => o.name === name)
+for (const key of [
+  'conversation.composer.dock',
+  'conversation.chat.turnTail',
+  'conversation.view',
+  'settings.section',
+  'sidebar.footer.action',
+]) {
+  assert(seatOf(key) !== undefined, 'registers into ' + key)
+  assert(seats.includes(key), 'waits for ' + key + ' to be declared before registering')
+}
+// A chain seat without a selector never elects, and the framework has no
+// default: the entry would silently never render.
+assert(typeof seatOf('conversation.chat.turnTail')?.select === 'function',
+  'the turn-tail entry carries the mandatory chain selector')
+// The selector must be pure over the owner props and must decline an open
+// turn, which has no final usage to report yet.
+const select = seatOf('conversation.chat.turnTail').select
+assert(select({ turn: { turn: 3, status: 'closed' }, seq: 9 })?.turn === 3, 'a closed turn elects, carrying its number')
+assert(select({ turn: { turn: 3, status: 'open' }, seq: 9 }) === null, 'an open turn declines')
+assert(select({}) === null, 'a missing turn declines rather than throwing')
+// List seats need a stable id; two entries sharing one id at the same priority
+// is a registration error, not a shadowing.
+for (const key of ['conversation.view', 'settings.section', 'sidebar.footer.action', 'conversation.composer.dock']) {
+  assert(typeof seatOf(key).id === 'string' && seatOf(key).id.length > 0, key + ' declares an id')
+}
+// Labels are thunks so a language switch re-reads them without re-registering.
+assert(typeof seatOf('conversation.view').label === 'function', 'the view tab label is a thunk')
+assert(typeof seatOf('settings.section').label === 'function', 'the settings nav label is a thunk')
 
 console.log('dictionaries')
 // Read the keys off the source: the dictionaries are module-private, and this

@@ -25,14 +25,28 @@ function assert(cond, msg) {
 }
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps
 
-/** Start one plugin instance against the shared DSH_HOME. */
+/**
+ * Start one plugin instance against the shared DSH_HOME.
+ *
+ * The stub mirrors the two cordis mechanisms the plugin depends on: `get` for
+ * an optional probe, and `inject(names, cb)` for a child fiber that starts
+ * only once every named service exists. `webServer` is the only one this fake
+ * assembly provides, so the RPC and projection children never start — which is
+ * also the assertion that their absence costs nothing.
+ */
 function boot(maxRecords = 10) {
   const instance = {}
-  plugin.apply({
-    effect: () => {}, get: () => undefined,
-    on: (name, fn) => { if (name === 'llm/stream') instance.stream = fn },
+  const services = {
     webServer: { register: (r) => { instance.api = r.handler } },
-  }, { maxRecords })
+  }
+  const ctx = {
+    ...services,
+    effect: (fn) => fn(),
+    get: (name) => services[name],
+    on: (name, fn) => { if (name === 'llm/stream') instance.stream = fn },
+    inject: (names, apply) => { if (names.every((n) => services[n])) apply(ctx) },
+  }
+  plugin.apply(ctx, { maxRecords })
   return instance
 }
 let { stream, api } = boot()

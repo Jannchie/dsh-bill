@@ -1,6 +1,6 @@
 # dsh-bill
 
-DSH(DeepSeek Harness)的费用统计插件。输入框下一行看花了多少,报告页看花在了什么上。
+DSH(DeepSeek Harness)的费用统计插件。每轮对话下面看这轮花了多少,「费用」标签页看花在了什么上。
 
 ![成本归因](docs/attribution.png)
 
@@ -15,8 +15,9 @@ dsh plugin --profile web add dsh-bill
 ## 功能
 
 - **成本归因** —— 按内容类型拆分账单:工具输出、模型输出、系统提示词、终端命令(按 `git` / `pnpm` / `rg` 分组)、工具输入、附件、系统提醒、用户输入。旭日图可下钻。
-- **常驻显示** —— 官方统计条下方一行:总消耗、本会话、高峰占比,「报告」直达报告页;侧边栏显示今日花费与预算进度。
-- **报告** —— 总费用、Token、缓存命中、高峰占比、月度预测、账户余额;按模型 / 会话 / 用途(含上下文压缩等循环开销)拆分;每日趋势与周 × 小时热力图。
+- **每轮成本** —— 每个结束的轮次下面一行:这轮花了多少、几步、缓存命中率。数据来自会话日志本身,所以安装前的历史也有。
+- **常驻显示** —— 官方统计条下方一行:总消耗、本会话、高峰占比;侧边栏显示今日花费与预算进度。
+- **报告** —— 会话内的「费用」标签页(与 Chat / Trajectory 并列):总费用、Token、缓存命中、高峰占比、月度预测、账户余额;按模型 / 会话 / 用途(含上下文压缩等循环开销)拆分;每日趋势与周 × 小时热力图。
 - **预算** —— 日 / 月 / 累计额度,超 80% 变黄,超支变红。
 - **多币种** —— 实时汇率,约 166 种货币;各模型基础单价按其官方定价货币显示。
 - **agent 工具** —— `bill_stats`,模型可直接回答花费相关的问题。
@@ -78,7 +79,7 @@ dsh plugin --profile web add dsh-bill
 
 ## 配置
 
-预算在报告页里直接设置。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
+预算在设置里的「费用统计」页设定。`maxRecords`(内存环形缓冲条数,默认 20000)与 `priceOverrides` 走插件配置,会在启动时校验 —— 写错的字段会指名报错,而不是让报告静静地空掉。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
 
 ```yaml
 - insert:
@@ -107,8 +108,10 @@ dsh plugin --profile web add dsh-bill
 | 计价 | 按调用时刻交由 `llm-pricing` 解析目录 / 峰谷 / 覆盖价 |
 | 归因 | 捕获时切分请求为分类片段,按缓存前缀位置分摊 |
 | 回填 | 扫描会话日志导入未记录的会话,按 `turn:step` 去重 |
-| 存储 | 内存环形缓冲 + 追加式 JSONL,淘汰前折叠为汇总 |
-| UI | `conversation.composer.dock` / `sidebar.footer.action` / `settings.section` |
+| 每轮 | `billTurns` session projection:host 侧折叠会话日志,推送到客户端,无轮询 |
+| 存储 | 内存环形缓冲 + 追加式 JSONL,淘汰前折叠为汇总;原子替换与文件锁复用 `dsh-atomic-write` |
+| 传输 | 优先 `ctx.connection.rpc` 通道 `/dsh-bill`,回落 `POST /dsh-bill/api` |
+| UI | `conversation.view` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `settings.section` |
 
 ## License
 
