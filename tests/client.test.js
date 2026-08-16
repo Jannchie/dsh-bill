@@ -23,7 +23,24 @@ function assert(cond, msg) {
 
 console.log('module evaluates')
 let exported = null
-globalThis.document = { querySelector: () => null }
+// A DOM stub with a real `head`, so the stylesheet injection runs here rather
+// than being skipped: the sheet carries every hover, focus and disabled state
+// in the plugin, and a module that silently declined to append it would look
+// identical to one that appended it correctly.
+//
+// `querySelector` answers from `appended` rather than always returning null, so
+// the module's own "is it already there?" guard is the thing under test — a
+// stub that always says "not present" would pass whether the guard existed or
+// not, and a second evaluation (hot reload) is exactly when it matters.
+const appended = []
+globalThis.document = {
+  querySelector: (sel) => {
+    const key = /data-plugin-css="([^"]+)"/.exec(sel)?.[1]
+    return appended.find((node) => node.dataset.pluginCss === key) ?? null
+  },
+  createElement: () => ({ dataset: {}, textContent: '' }),
+  head: { appendChild: (node) => appended.push(node) },
+}
 globalThis.window = {
   __ModuleLoader__: {
     load: (mod) => {
@@ -87,10 +104,50 @@ for (const key of ['conversation.view', 'settings.section', 'sidebar.footer.acti
 assert(typeof seatOf('conversation.view').label === 'function', 'the view tab label is a thunk')
 assert(typeof seatOf('settings.section').label === 'function', 'the settings nav label is a thunk')
 
-console.log('dictionaries')
-// Read the keys off the source: the dictionaries are module-private, and this
-// stays a pure lint over what ships rather than an API widened for tests.
+// Read the source once: several checks below are lints over what ships rather
+// than over an API widened for tests.
 const source = readFileSync(clientPath, 'utf8')
+
+console.log('stylesheet')
+// The sheet is how this plugin gets the interactive states the shipped
+// controls have. It must land, be keyed the way the host keys its own (so a
+// reload replaces rather than stacks it), and address only prefixed classes —
+// an unprefixed rule here would restyle the whole app.
+assert(appended.length === 1, 'exactly one <style> tag is appended (got ' + appended.length + ')')
+const sheet = appended[0]
+assert(sheet.dataset.pluginCss === 'dsh-bill/bill.css', 'keyed on data-plugin-css')
+assert(sheet.dataset.plugin === 'dsh-bill', 'attributed to this plugin')
+const css = sheet.textContent
+// Strip comments and unwrap the @media block, then read the text before each
+// `{` as a selector list — commas inside declarations (font stacks, easing
+// curves) make a single regex over the whole sheet unusable.
+const flat = css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/@media[^{]*\{/g, '')
+const selectors = [...flat.matchAll(/([^{}]+)\{/g)]
+  .flatMap((m) => m[1].split(','))
+  .map((s) => s.trim()).filter(Boolean)
+const foreign = selectors.filter((s) => !s.startsWith('.dshbill-'))
+assert(foreign.length === 0, 'every selector is scoped to .dshbill-*: ' + foreign.join(' | '))
+// Hover without focus-visible is a mouse-only affordance; the shipped controls
+// carry both, and a keyboard user must be able to see where they are.
+assert(/:hover/.test(css) && /:focus-visible/.test(css), 'declares both hover and focus-visible states')
+
+console.log('type ramp')
+// Every size comes from the design system's composite font tokens — no literal
+// that happens to look right, anywhere. The one off-ramp step this plugin needs
+// (the dock's 12px/20px, copied from the shipped StatsLine) lives in the sheet
+// as a CSS rule, exactly as upstream ships it, so the JS side is absolute.
+const sizes = [...source.matchAll(/fontSize:\s*\d+/g)]
+assert(sizes.length === 0, 'no hand-set font size remains (got ' + sizes.map((m) => m[0]).join(', ') + ')')
+// Published steps, from the theme's design-platform tokens.
+const RAMP = new Set(['xxxs-11', 'xxxs-strong-11', 'xxs-12', 'xxs-strong-12', 'xs-13', 'xs-strong-13',
+  's-14', 's-strong-14', 'base-16', 'base-strong-16', 'm-18', 'l-20', 'xl-24'])
+const steps = [...source.matchAll(/--dsw-font-([a-z0-9-]+)\)/g)].map((m) => m[1])
+const offRamp = steps.filter((s) => s !== 'family' && !RAMP.has(s))
+assert(steps.length > 0 && offRamp.length === 0,
+  'every font token used is a published step' + (offRamp.length ? ': ' + offRamp.join(', ') : ''))
+
+console.log('dictionaries')
+// The dictionaries are module-private, so their keys are read off the source.
 function dictKeys(name) {
   const start = source.indexOf('var ' + name + ' = {')
   if (start < 0) return null
