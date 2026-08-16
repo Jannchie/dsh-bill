@@ -4,23 +4,6 @@ DSH(DeepSeek Harness)的费用统计插件。输入框下一行看花了多少,�
 
 ![成本归因](docs/attribution.png)
 
-## 功能
-
-- **会话费用行** —— 官方统计条下方一行:总消耗、本会话、高峰占比,「报告」直达报告页;侧边栏常驻显示今日花费与预算进度。
-
-  ![会话费用行与侧边栏](docs/composer-line.png)
-
-- **成本归因** —— 按内容类型拆分账单:工具输出、模型输出、系统提示词、终端命令(按 `git` / `pnpm` / `rg` 分组)、工具输入、附件、系统提醒、用户输入。旭日图可下钻。
-- **预算** —— 日 / 月 / 累计额度,超 80% 变黄,超支变红。
-- **报告** —— 总费用、Token、缓存命中、高峰占比、月度预测、账户余额(见下图);
-
-  ![报告页](docs/dashboard.png)
-
-  按模型、按会话、按用途(含上下文压缩等循环开销)拆分;每日趋势与周 × 小时热力图;7 / 30 / 90 / 365 天。
-- **多币种** —— 实时汇率,约 166 种货币;各模型基础单价按其官方定价货币显示。
-- **中英文** —— 跟随 DSH 语言设置。
-- **agent 工具** —— `bill_stats`,模型可直接回答花费相关的问题。
-
 ## 安装
 
 ```bash
@@ -29,9 +12,32 @@ dsh plugin --profile web add dsh-bill
 
 重启 `dsh web` 生效。
 
+## 功能
+
+- **成本归因** —— 按内容类型拆分账单:工具输出、模型输出、系统提示词、终端命令(按 `git` / `pnpm` / `rg` 分组)、工具输入、附件、系统提醒、用户输入。旭日图可下钻。
+- **常驻显示** —— 官方统计条下方一行:总消耗、本会话、高峰占比,「报告」直达报告页;侧边栏显示今日花费与预算进度。
+- **报告** —— 总费用、Token、缓存命中、高峰占比、月度预测、账户余额;按模型 / 会话 / 用途(含上下文压缩等循环开销)拆分;每日趋势与周 × 小时热力图。
+- **预算** —— 日 / 月 / 累计额度,超 80% 变黄,超支变红。
+- **多币种** —— 实时汇率,约 166 种货币;各模型基础单价按其官方定价货币显示。
+- **agent 工具** —— `bill_stats`,模型可直接回答花费相关的问题。
+- 中英文跟随 DSH 语言设置;安装前的历史可从会话日志回填。
+
 ## 与同类插件的差异
 
-DSH 生态里的费用插件不少。下表按**源码实测**,不按 README 宣称;取样为 GitHub `dsh-plugin` topic 下 star ≥ 40 的费用类插件,以及 npm 上已发布的四个(对比于 2026-08-16)。
+三处实质差异:
+
+**不用手编价格。** 其余插件都内置 2–4 个 DeepSeek 型号的价格表,换个 provider 就没有价格,因此它们都需要一个「手工编辑价格表」的入口。dsh-bill 通过 [`llm-pricing`](https://github.com/Jannchie/llm-pricing) 拉取 models.dev 与 OpenRouter,覆盖 8000+ 条目,新模型上线即可计价。
+
+**价格是时间轴。** 其余插件把价格算成一个数存下来(或按当前价重算),厂商调价、跨越峰谷边界时历史就不准了。dsh-bill 按每次调用自己的时刻定价,历史永不重算。
+
+**回答「花在什么上」。** 其余插件只回答「花了多少」——它们只消费 provider 汇总的 token 计数,不看请求内容。dsh-bill 在捕获时把请求切成分类片段,按缓存前缀位置分摊费用。
+
+也有它们做得更好的地方:`usage-stats` 支持 11 种 provider 的余额与订阅额度(dsh-bill 只有 DeepSeek),`cost-meter` 能读取 OpenCode Go 的订阅配额,两者的常驻入口也比 dsh-bill 多。
+
+<details>
+<summary>逐项对比(按源码实测,取样于 2026-08-16)</summary>
+
+取样为 GitHub `dsh-plugin` topic 下 star ≥ 40 的费用类插件,以及 npm 上已发布的四个。`deepseek-harness-wallet` 等 star 较低的插件未逐一核对。
 
 | | dsh-bill | cost-meter | usage-stats | dsh-cost | cost-log | dsh-usage | usage-billing |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -48,15 +54,7 @@ DSH 生态里的费用插件不少。下表按**源码实测**,不按 README 宣
 | agent 工具 | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
 | 多币种 | 166 种,实时汇率 | 3 种,固定汇率 | — | 随界面语言 | ¥/$ | 单一货币 | 仅 ¥ |
 
-三处实质差异:
-
-**不用手编价格。** 其余插件都内置 2–4 个 DeepSeek 型号的价格表,换个 provider 就没有价格,因此它们都需要一个「手工编辑价格表」的入口。dsh-bill 通过 [`llm-pricing`](https://github.com/Jannchie/llm-pricing) 拉取 models.dev 与 OpenRouter,覆盖 8000+ 条目,新模型上线即可计价。
-
-**价格是时间轴。** 其余插件把价格算成一个数存下来(或按当前价重算),厂商调价、跨越峰谷边界时历史就不准了。dsh-bill 按每次调用自己的时刻定价,历史永不重算。
-
-**回答「花在什么上」。** 其余插件都只回答「花了多少」——它们只消费 provider 汇总的 token 计数,不看请求内容。dsh-bill 在捕获时把请求切成分类片段,按缓存前缀位置分摊费用。
-
-也有它们做得更好的地方:`usage-stats` 支持 11 种 provider 的余额与订阅额度(dsh-bill 只有 DeepSeek),`cost-meter` 能读取 OpenCode Go 的订阅配额,两者的常驻入口也比 dsh-bill 多。`deepseek-harness-wallet` 等 star 较低的插件未逐一核对。
+</details>
 
 ## 计价
 
@@ -80,7 +78,7 @@ DSH 生态里的费用插件不少。下表按**源码实测**,不按 README 宣
 
 ## 配置
 
-`~/.dsh/profiles/web/cordis.patch.yml`:
+预算在报告页里直接设置。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
 
 ```yaml
 - insert:
@@ -95,11 +93,9 @@ DSH 生态里的费用插件不少。下表按**源码实测**,不按 README 宣
             cacheWritePerM: 3.75
 ```
 
-预算在报告页里直接设置,不需要改配置。
-
 ## 数据与隐私
 
-- 记录每次调用的 provider / model / token 用量及归因金额,落盘至 `$DSH_HOME/dsh-bill/records.jsonl`(2 万条环形缓冲);
+- 记录每次调用的 provider / model / token 用量及归因金额,落盘至 `$DSH_HOME/dsh-bill/records.jsonl`(2 万条环形缓冲,更早的折叠为汇总);
 - 账户余额的 API key 在 host 侧解析与使用,不进入浏览器;
 - 除价格目录、汇率接口与余额查询外不发送任何数据;不保存任何对话内容。
 
@@ -111,7 +107,7 @@ DSH 生态里的费用插件不少。下表按**源码实测**,不按 README 宣
 | 计价 | 按调用时刻交由 `llm-pricing` 解析目录 / 峰谷 / 覆盖价 |
 | 归因 | 捕获时切分请求为分类片段,按缓存前缀位置分摊 |
 | 回填 | 扫描会话日志导入未记录的会话,按 `turn:step` 去重 |
-| 存储 | 内存环形缓冲 + JSONL 持久化 |
+| 存储 | 内存环形缓冲 + 追加式 JSONL,淘汰前折叠为汇总 |
 | UI | `conversation.composer.dock` / `sidebar.footer.action` / `settings.section` |
 
 ## License
