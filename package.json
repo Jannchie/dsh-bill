@@ -1,6 +1,6 @@
 {
   "name": "dsh-bill",
-  "version": "0.5.0",
+  "version": "0.8.0",
   "description": "DSH 费用统计插件:会话费用行 + 成本归因报告,llm-pricing 动态价格。 / DSH cost attribution and usage dashboard, priced by llm-pricing.",
   "type": "module",
   "license": "MIT",
@@ -62,5 +62,13 @@
     "check": "node --check lib/index.js && node --check lib/pricing.js && node --check lib/attribution.js && node --check lib/client.js",
     "test": "node tests/pricing.test.js && node tests/attribution.test.js",
     "prepublishOnly": "npm run check && npm test"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
   }
 }
