@@ -1,0 +1,66 @@
+{
+  "name": "dsh-bill",
+  "version": "0.5.0",
+  "description": "DSH 费用统计插件:会话费用行 + 成本归因报告,llm-pricing 动态价格。 / DSH cost attribution and usage dashboard, priced by llm-pricing.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Jannchie",
+  "homepage": "https://github.com/Jannchie/dsh-bill#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jannchie/dsh-bill.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Jannchie/dsh-bill/issues"
+  },
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "cost",
+    "usage",
+    "token",
+    "pricing",
+    "dashboard"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "llm-pricing": "^0.6.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "docs"
+  ],
+  "scripts": {
+    "check": "node --check lib/index.js && node --check lib/pricing.js && node --check lib/attribution.js && node --check lib/client.js",
+    "test": "node tests/pricing.test.js && node tests/attribution.test.js",
+    "prepublishOnly": "npm run check && npm test"
+  }
+}
