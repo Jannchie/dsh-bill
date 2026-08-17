@@ -20,7 +20,7 @@ Restart `dsh web` to pick it up.
 
 - **Cost attribution** — the bill split by kind of content: tool output, model output, system prompt, terminal commands (grouped by `git` / `pnpm` / `rg`), tool input, attachments, system reminders, user input. The sunburst drills in.
 - **Per-turn cost** — one line under every finished turn: what it cost, how many steps, the cache-hit rate. It reads the session log itself, so turns from before you installed the plugin are covered too.
-- **Always on screen** — a line under the shipped stats line (all-time, this session, peak share), and today's spend against the budget in the sidebar.
+- **Always on screen** — a line under the shipped stats line (all-time, this session, peak share), and today's spend against the budget in the sidebar. Each of the four surfaces can be turned off individually in settings.
 - **Report** — a **Cost** tab in the conversation, beside Chat and Trajectory: total, tokens, cache hit, peak share, monthly forecast, account balance; broken down by model, by session, and by purpose (including loop overhead such as context compaction); a daily trend and a weekday × hour heatmap.
 - **Budget** — a daily / monthly / all-time limit that turns amber past 80% and red when you go over.
 - **Multi-currency** — live rates for ~166 currencies; each model's base rate is shown in the currency its vendor prices it in.
@@ -83,7 +83,9 @@ The session log holds token counts and model routes but **not the request bodies
 
 ## Configuration
 
-The budget is set on the **Cost** page in settings. `maxRecords` (the in-memory ring buffer size, default 20000) and `priceOverrides` are plugin config and are validated at startup — a mistyped field is reported by name rather than leaving the report quietly empty. `~/.dsh/profiles/web/cordis.patch.yml` is only needed when you want to override a price:
+The budget, its currency, and which of the four surfaces are shown are all set on the **Cost** page in settings, and stored in `$DSH_HOME/dsh-bill/prefs.json`. (Not in the harness's own settings document: its API proxy serves a fixed allowlist of namespaces to the browser, so a plugin's namespace is never readable or writable from there.)
+
+`maxRecords` (the in-memory ring buffer size, default 20000) and `priceOverrides` are plugin config and are validated at startup — a mistyped field is reported by name rather than leaving the report quietly empty. `~/.dsh/profiles/web/cordis.patch.yml` is only needed when you want to override a price:
 
 ```yaml
 - insert:
@@ -113,7 +115,7 @@ The budget is set on the **Cost** page in settings. `maxRecords` (the in-memory 
 | Attribution | the request is split into classified segments at capture time and apportioned by position in the cache prefix |
 | Backfill | scans the session log for sessions it never recorded, deduplicating on `turn:step` |
 | Per turn | the `billTurns` session projection folds the session log host-side and pushes to the client — no polling |
-| Storage | in-memory ring buffer plus append-only JSONL, folded into a rollup before eviction; atomic replace and file locking borrowed from `dsh-atomic-write` |
+| Storage | in-memory ring buffer plus append-only JSONL, folded into a rollup before eviction; preferences in their own small JSON document; atomic replace and file locking borrowed from `dsh-atomic-write` |
 | Transport | the `ctx.connection.rpc` channel `/dsh-bill` when there is one, falling back to `POST /dsh-bill/api` |
 | UI | `conversation.view` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `settings.section`, built on the host's `--dsw-*` design tokens |
 
