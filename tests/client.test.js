@@ -23,6 +23,7 @@ function assert(cond, msg) {
 
 console.log('module evaluates')
 let exported = null
+const react = { sets: [], runEffect: () => {} }
 // A DOM stub with a real `head`, so the stylesheet injection runs here rather
 // than being skipped: the sheet carries every hover, focus and disabled state
 // in the plugin, and a module that silently declined to append it would look
@@ -46,8 +47,11 @@ globalThis.window = {
     load: (mod) => {
       exported = mod.factory(() => ({
         createElement: () => null,
-        useState: () => [null, () => {}],
-        useEffect: () => {},
+        // Initialisers run and setters are recorded, so a component can be
+        // called as a plain function below and its effects observed. Effects
+        // go through `react.runEffect`, inert until a test wants them.
+        useState: (init) => [typeof init === 'function' ? init() : init, (v) => react.sets.push(v)],
+        useEffect: (fn) => react.runEffect(fn),
         useMemo: (fn) => fn(),
         useCallback: (fn) => fn,
       }))
@@ -104,6 +108,98 @@ for (const key of ['conversation.view', 'settings.section', 'sidebar.footer.acti
 // Labels are thunks so a language switch re-reads them without re-registering.
 assert(typeof seatOf('conversation.view').label === 'function', 'the view tab label is a thunk')
 assert(typeof seatOf('settings.section').label === 'function', 'the settings nav label is a thunk')
+
+console.log('host transport')
+// The client being handed `connection.rpc` does not prove the host mounted
+// the `/dsh-bill` channel: on DSH 0.1.5 `rpc.handle` throws for every plugin,
+// so the channel object exists, the route does not, and every call comes back
+// `transport failure ... HTTP 405` while `POST /dsh-bill/api` answers fine
+// (issue #1). The transport is module-private, so it is driven the way the
+// page drives it — through the dock component's effects.
+const calls = []
+let rpcMode = 'transport'
+const rpc = {
+  call: (channel, endpoint) => {
+    calls.push('rpc:' + endpoint)
+    if (rpcMode === 'transport') return Promise.reject(new Error('transport failure for ' + channel + '/' + endpoint + ': HTTP 405'))
+    if (rpcMode === 'handler') return Promise.resolve({ ok: false, error: { message: 'handler said no' } })
+    return Promise.resolve({ ok: true, value: { via: 'rpc' } })
+  },
+}
+let httpUp = true
+globalThis.fetch = (url, init) => {
+  calls.push('http:' + JSON.parse(init.body).action)
+  if (!httpUp) return Promise.reject(new TypeError('Failed to fetch'))
+  return Promise.resolve({ json: () => Promise.resolve({ via: 'http' }) })
+}
+// apply() is what resolves the channel, so re-running it hands the page a
+// fresh one — the same shape as a reload against a host that has it.
+const components = {}
+function applyWithChannel() {
+  exported.apply({
+    get: (name) => {
+      if (name === 'slots') {
+        return {
+          inject: (key, effect) => effect(),
+          register: (options, component) => { components[options.name] = component; return () => {} },
+        }
+      }
+      if (name === 'connection') return { rpc }
+      return undefined
+    },
+    effect: () => {},
+  })
+}
+// Render the dock once: effects run, the calls settle, then the effects are
+// torn down (which also clears the slow poll timer). Returns the settled
+// states the component set.
+async function renderDock() {
+  const cleanups = []
+  react.runEffect = (fn) => { const c = fn(); if (typeof c === 'function') cleanups.push(c) }
+  react.sets = []
+  components['conversation.composer.dock']({ sessionId: 's1' })
+  await new Promise((r) => setTimeout(r, 0))
+  cleanups.forEach((c) => c())
+  react.runEffect = () => {}
+  return react.sets
+}
+const answered = (sets) => sets.find((s) => s && s.loading === false)
+
+applyWithChannel()
+let sets = await renderDock()
+assert(calls.includes('rpc:overview'), 'the channel is tried first')
+assert(calls.indexOf('http:overview') > calls.indexOf('rpc:overview'), 'a transport failure falls back to POST /dsh-bill/api')
+assert(answered(sets)?.data?.via === 'http', 'the HTTP answer is the one shown, not the 405')
+
+calls.length = 0
+sets = await renderDock()
+assert(!calls.some((c) => c.startsWith('rpc:')), 'after a successful fallback the dead channel is not tried again')
+assert(answered(sets)?.data?.via === 'http', 'HTTP keeps serving')
+
+calls.length = 0
+rpcMode = 'handler'
+applyWithChannel()
+sets = await renderDock()
+assert(calls.includes('rpc:overview') && !calls.includes('http:overview'), 'a handler error is an answer, not a transport failure: no fallback')
+assert(answered(sets)?.error === 'handler said no', 'the handler\'s message is what surfaces')
+
+calls.length = 0
+rpcMode = 'ok'
+applyWithChannel()
+sets = await renderDock()
+assert(answered(sets)?.data?.via === 'rpc' && !calls.includes('http:overview'), 'a working channel is used as before')
+
+calls.length = 0
+rpcMode = 'transport'
+httpUp = false
+applyWithChannel()
+sets = await renderDock()
+assert(/transport failure .*HTTP 405/.test(answered(sets)?.error ?? ''), 'with both carriers down, the transport error is the one reported')
+calls.length = 0
+sets = await renderDock()
+assert(calls.includes('rpc:overview'), 'a fallback that also failed does not demote the channel')
+httpUp = true
+delete globalThis.fetch
 
 // Read the source once: several checks below are lints over what ships rather
 // than over an API widened for tests.
