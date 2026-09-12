@@ -82,7 +82,18 @@ assert(flat.base.currency === 'CNY', 'record base carries the native currency')
 console.log('unknown model')
 const unknown = priceRecord(rec('totally-made-up-model-xyz', beforePeak, { inputTokens: 1e6 }))
 assert(unknown.usd === null && !unknown.priced, 'unknown model is unpriced, not $0')
-
+// Regression: the unpriced shape must be lossless JSON. `bill_stats` folds this
+// object into a byModel row and returns it, and the host's validator rejects the
+// ENTIRE tree when any own property holds `undefined` — which `JSON.stringify`
+// hides, so a disk round trip never caught it. `displayName: undefined` here was
+// the bug that made every bill_stats call fail on a machine with unpriced models.
+for (const [key, value] of Object.entries(unknown)) {
+  assert(value !== undefined, 'unpriced result has no `undefined` property (' + key + ')')
+}
+assert(Object.prototype.hasOwnProperty.call(unknown, 'displayName') && unknown.displayName === null,
+  'unpriced displayName is an explicit null, so the key survives JSON (' + JSON.stringify(unknown.displayName) + ')')
+assert(JSON.parse(JSON.stringify(unknown)).displayName === null,
+  'the unpriced shape round-trips through JSON without losing the displayName key')
 console.log('priceOverrides')
 mergeOverrides({ 'acme/test-1': { inputPerM: 0.5, outputPerM: 1.5, cacheReadPerM: 0.05 } })
 const custom = priceRecord(rec('acme/test-1', Date.now(), { inputTokens: 1e6, outputTokens: 1e6 }))
