@@ -104,6 +104,38 @@ console.log('rounding')
 assert(roundCost(Number.NaN) === 0, 'NaN rounds to 0')
 assert(roundCost(0.1 + 0.2) === 0.3, 'float noise rounded away')
 
+// A router addresses a model by its own id — provider prefix, plus the routing
+// tier it ran — and Cursor spells Claude family-last. The catalogue keys on the
+// vendor's name, so those calls used to bill as `?`. Driven entirely by
+// overrides, so this stays offline and offline-deterministic.
+console.log('router ids resolve to the catalogue key they meant')
+mergeOverrides({
+  'claude-opus-9.9': { inputPerM: 5, outputPerM: 25 },
+  'grok-9.9': { inputPerM: 5, outputPerM: 25 },
+  'grok-9.9-fast': { inputPerM: 30, outputPerM: 150 },
+  'weird-model': { inputPerM: 1, outputPerM: 1 },
+  'weird-model-thinking': { inputPerM: 99, outputPerM: 99 },
+})
+const both1M = (model) => priceRecord(rec(model, Date.now(), { inputTokens: 1e6, outputTokens: 1e6 }))
+assert(Math.abs(both1M('claude-opus-9.9').usd - 30) < 1e-6, 'baseline: 5/25 per M = $30')
+assert(Math.abs(both1M('gw/claude-opus-9.9-high').usd - 30) < 1e-6, 'provider prefix + -high resolves to the same $30')
+assert(Math.abs(both1M('gw/claude-opus-9.9-thinking').usd - 30) < 1e-6, '-thinking resolves to the same $30')
+assert(Math.abs(both1M('cursor/claude-9.9-opus-high').usd - 30) < 1e-6, 'family-last + -high resolves to the same $30')
+
+// -fast is a real rate multiplier, not a routing tier: peeling it would bill a
+// 6x model at its base rate, which is worse than showing `?`.
+assert(Math.abs(both1M('grok-9.9-fast').usd - 180) < 1e-6, '-fast alone keeps its 6x rate ($180)')
+assert(Math.abs(both1M('grok-9.9-high-fast').usd - 180) < 1e-6, '-high-fast peels the tier but KEEPS -fast ($180)')
+assert(Math.abs(both1M('cursor/grok-9.9-xhigh-fast').usd - 180) < 1e-6, 'prefix + -xhigh-fast also keeps -fast ($180)')
+
+// Literal wins: `weird-model-thinking` is itself priced, so it must not be
+// rewritten to the cheaper `weird-model` by a suffix peel.
+assert(Math.abs(both1M('weird-model-thinking').usd - 198) < 1e-6, 'a literal catalogue key is never shadowed by a rewrite ($198, not $2)')
+
+// Resolution finds a real entry or nothing — it never invents one.
+const nothing = both1M('gw/weird-model-2-high')
+assert(nothing.usd === null && !nothing.priced, 'no catalogue entry anywhere stays unpriced, not $0')
+
 console.log('fx')
 ensureFxLoaded().then(() => {
   const fx = getFx()
