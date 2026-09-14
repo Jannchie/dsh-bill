@@ -131,6 +131,18 @@ const halfPrice = validate({ priceOverrides: { 'my-model': { inputPerM: 1 } } })
 assert(halfPrice.issues?.some((i) => i.path?.join('.') === 'priceOverrides.my-model.outputPerM'),
   'a half-specified override is refused at its exact path')
 
+// `lazyToolsLookback` / `lazyToolsPattern` are user preferences, not config
+// fields: the settings dialog owns them and they persist in the plugin's own
+// store. Their shape is therefore asserted in `prefs.test.js`, not here — what
+// this file checks is that the config schema does not quietly grow a second
+// source for them.
+assert(validate({ lazyToolsLookback: 4 }).value.lazyToolsLookback === undefined,
+  'lazyToolsLookback is not a config field (the settings dialog owns it)')
+assert(validate({ lazyToolsPattern: 'x' }).value.lazyToolsPattern === undefined,
+  'lazyToolsPattern is not a config field')
+assert(validate({ lazyToolsPattern: '(' }).issues === undefined,
+  'an unknown key is ignored rather than validated twice')
+
 console.log('the plugin declares no hard dependency')
 assert(Array.isArray(plugin.inject) && plugin.inject.length === 0,
   'inject is empty, so a carrier-less assembly still records (got ' + JSON.stringify(plugin.inject) + ')')

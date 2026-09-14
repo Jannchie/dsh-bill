@@ -24,7 +24,7 @@ Restart `dsh web` to pick it up.
 - **Report** — a **Cost** tab in the conversation, beside Chat and Trajectory: total, tokens, cache hit, peak share, monthly forecast, account balance; broken down by model, by session, and by purpose (including loop overhead such as context compaction); a daily trend and a weekday × hour heatmap.
 - **Budget** — a daily / monthly / all-time limit that turns amber past 80% and red when you go over.
 - **Multi-currency** — live rates for ~166 currencies; each model's base rate is shown in the currency its vendor prices it in.
-- **Agent tool** — `bill_stats`, so the model can answer questions about spend directly.
+- **Agent tool** — `bill_stats`, so the model can answer questions about spend directly. Its schema can be kept off requests: in **Tools** in settings, a lookback window of 0 hides the tool entirely, and a positive N sends the schema only when the recent N user messages match a pattern you can edit (a regular expression, one per install; the built-in one covers the usual spend vocabulary).
 - English and Chinese follow the DSH language setting; history from before the install is backfilled from the session log.
 
 ## How it differs from similar plugins
