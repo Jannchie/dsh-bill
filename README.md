@@ -85,7 +85,7 @@ The session log holds token counts and model routes but **not the request bodies
 
 The budget, its currency, the display currency shared by every figure, and which of the four surfaces are shown are all set on the **Cost** page in settings, and stored in `$DSH_HOME/dsh-bill/prefs.json`. The two currencies are separate settings: the budget's is the promise ("¥100 a month") and does not follow the display. (Not in the harness's own settings document: its API proxy serves a fixed allowlist of namespaces to the browser, so a plugin's namespace is never readable or writable from there.)
 
-`maxRecords` (the in-memory ring buffer size, default 20000), `agentTool` (register `bill_stats`, default `true`) and `priceOverrides` are plugin config and are validated at startup — a mistyped field is reported by name rather than leaving the report quietly empty. `~/.dsh/profiles/web/cordis.patch.yml` is only needed when you want to override a price:
+`maxRecords` (the in-memory ring buffer size, default 20000), `agentTool` (register `bill_stats`, default `true`), `backfillTimeoutMs` (the total budget for the boot-time history import, default 60000) and `priceOverrides` are plugin config and are validated at startup — a mistyped field is reported by name rather than leaving the report quietly empty. `~/.dsh/profiles/web/cordis.patch.yml` is only needed when you want to override a price:
 
 ```yaml
 - insert:
@@ -113,7 +113,7 @@ The budget, its currency, the display currency shared by every figure, and which
 | Capture | hooks the `llm/stream` waterfall, wraps the stream to observe `usage` chunks, passes everything through untouched |
 | Pricing | `llm-pricing` resolves catalogue / peak rate / override at the call's own instant |
 | Attribution | the request is split into classified segments at capture time and apportioned by position in the cache prefix |
-| Backfill | scans the session log for sessions it never recorded, deduplicating on `turn:step` |
+| Backfill | lists the session log once, imports sessions it never recorded with a cancellable budget, deduplicating on `turn:step` |
 | Per turn | the `billTurns` session projection folds the session log host-side and pushes to the client — no polling |
 | Storage | in-memory ring buffer plus append-only JSONL, folded into a rollup before eviction; preferences in their own small JSON document; atomic replace and file locking borrowed from `dsh-atomic-write` |
 | Transport | the `ctx.connection.rpc` channel `/dsh-bill` when there is one, falling back to `POST /dsh-bill/api` |

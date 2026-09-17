@@ -85,7 +85,7 @@ dsh plugin --profile web add dsh-bill
 
 预算、预算货币、所有数字共用的显示货币,以及四处界面各自是否显示,都在设置里的「费用统计」页设定,存于 `$DSH_HOME/dsh-bill/prefs.json`。两种货币是两个独立设置:预算货币是那句承诺(「每月 100 元」),不随显示货币变动。(不走 DSH 自己的设置文档:它的 API 代理只向浏览器暴露一份固定的命名空间白名单,插件的命名空间在那里既读不到也写不了。)
 
-`maxRecords`(内存环形缓冲条数,默认 20000)、`agentTool`(是否注册 `bill_stats`,默认 `true`)与 `priceOverrides` 走插件配置,会在启动时校验 —— 写错的字段会指名报错,而不是让报告静静地空掉。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
+`maxRecords`(内存环形缓冲条数,默认 20000)、`agentTool`(是否注册 `bill_stats`,默认 `true`)、`backfillTimeoutMs`(启动时历史导入的总预算,默认 60000 毫秒)与 `priceOverrides` 走插件配置,会在启动时校验 —— 写错的字段会指名报错,而不是让报告静静地空掉。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
 
 ```yaml
 - insert:
@@ -113,7 +113,7 @@ dsh plugin --profile web add dsh-bill
 | 捕获 | 监听 `llm/stream` waterfall,包装流观察 `usage` chunk,原样透传 |
 | 计价 | 按调用时刻交由 `llm-pricing` 解析目录 / 峰谷 / 覆盖价 |
 | 归因 | 捕获时切分请求为分类片段,按缓存前缀位置分摊 |
-| 回填 | 扫描会话日志导入未记录的会话,按 `turn:step` 去重 |
+| 回填 | 会话日志只列一次,以可取消的预算导入未记录的会话,按 `turn:step` 去重 |
 | 每轮 | `billTurns` session projection:host 侧折叠会话日志,推送到客户端,无轮询 |
 | 存储 | 内存环形缓冲 + 追加式 JSONL,淘汰前折叠为汇总;偏好为单独的小 JSON 文档;原子替换与文件锁复用 `dsh-atomic-write` |
 | 传输 | 优先 `ctx.connection.rpc` 通道 `/dsh-bill`,回落 `POST /dsh-bill/api` |
