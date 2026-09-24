@@ -101,6 +101,25 @@ const select = seatOf('conversation.chat.turnTail').select
 assert(select({ turn: { turn: 3, status: 'closed' }, seq: 9 })?.turn === 3, 'a closed turn elects, carrying its number')
 assert(select({ turn: { turn: 3, status: 'open' }, seq: 9 }) === null, 'an open turn declines')
 assert(select({}) === null, 'a missing turn declines rather than throwing')
+// DSH 0.1.7 re-declared the turn tail as a LIST: `id` required, `select`
+// rejected. Registering the chain shape there throws and fails the whole
+// client bundle, so the shape must follow the declared spec.
+{
+  const listed = []
+  exported.apply({
+    get: (name) => (name === 'slots'
+      ? {
+          inject: (key, effect) => effect(),
+          register: (options) => { listed.push(options); return () => {} },
+          spec: () => ({ kind: 'list' }),
+        }
+      : undefined),
+    effect: () => {},
+  })
+  const tail = listed.find((o) => o.name === 'conversation.chat.turnTail')
+  assert(typeof tail?.id === 'string' && tail.id.length > 0, 'a list-kind turn tail registers with an id')
+  assert(tail?.select === undefined, 'a list-kind turn tail carries no chain selector')
+}
 // List seats need a stable id; two entries sharing one id at the same priority
 // is a registration error, not a shadowing.
 for (const key of ['conversation.view', 'settings.section', 'sidebar.footer.action', 'conversation.composer.dock', 'sidebar.session.row.hover']) {
