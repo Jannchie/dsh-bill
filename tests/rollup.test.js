@@ -94,6 +94,14 @@ console.log('all-time total survives eviction')
 for (let i = 0; i < 5; i++) await call(base + i * 3600_000)
 const five = await ask({ action: 'dashboard', rangeDays: 0 })
 assert(five.calls === 5, 'five calls recorded')
+
+console.log('the session tab reports its own session only')
+const s1 = await ask({ action: 'dashboard', rangeDays: 0, sessionId: 's1' })
+const other = await ask({ action: 'dashboard', rangeDays: 0, sessionId: 's-other' })
+assert(s1.calls === 5 && other.calls === 0, 'each session counts only its own calls (got ' + s1.calls + ', ' + other.calls + ')')
+assert(s1.periods === null && s1.forecast === null && s1.bySession.length === 0, 'account-wide figures are left out of a session report')
+const all = await ask({ action: 'dashboard', rangeDays: 0 })
+assert(all.calls === 5 && all.periods !== null, 'the global report still counts every session')
 const perCall = five.totalUsd / 5
 
 // Twenty-five more: the ring holds 10, so 20 get folded into the rollup.

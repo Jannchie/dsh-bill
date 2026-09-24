@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Cost tracking for DSH (DeepSeek Harness). A line under each turn tells you what that turn cost; the **Cost** tab tells you what the money went on.
+Cost tracking for DSH (DeepSeek Harness). A line under each turn tells you what that turn cost; the conversation's **Cost** tab tells you what that session's money went on, and the global **Cost** panel beside Plugins does the same for the whole account.
 
 ![Per-turn cost in the conversation](docs/in-chat.png)
 
@@ -21,7 +21,7 @@ Restart `dsh web` to pick it up.
 - **Cost attribution** — the bill split by kind of content: tool output, model output, system prompt, terminal commands (grouped by `git` / `pnpm` / `rg`), tool input, attachments, system reminders, user input. The sunburst drills in.
 - **Per-turn cost** — one line under every finished turn: what it cost, how many steps, the cache-hit rate. It reads the session log itself, so turns from before you installed the plugin are covered too.
 - **Always on screen** — this session's cost as a pill beside the shipped stats in the composer dock, today's spend against the budget in the sidebar, and each session's cost in its sidebar hover card (DSH 0.1.7+). Each of the five surfaces can be turned off individually in settings.
-- **Report** — a **Cost** tab in the conversation, beside Chat and Trajectory: total, tokens, cache hit, peak share, monthly forecast, account balance; broken down by model, by session, and by purpose (including loop overhead such as context compaction); a daily trend and a weekday × hour heatmap.
+- **Report** — a **Cost** tab in each conversation (beside Chat and Trajectory) scoped to that session, and an account-wide **Cost** panel opened from the sidebar icon beside Plugins (DSH 0.1.7+): total, tokens, cache hit, peak share; account-wide also monthly forecast, account balance, budget and a per-session split; broken down by model and by purpose (including loop overhead such as context compaction); a daily trend and a weekday × hour heatmap.
 - **Budget** — a daily / monthly / all-time limit that turns amber past 80% and red when you go over.
 - **Multi-currency** — live rates for ~166 currencies; each model's base rate is shown in the currency its vendor prices it in.
 - **Agent tool** — `bill_stats`, so the model can answer questions about spend directly. `agentTool: false` in the plugin config leaves it unregistered, for anyone who never asks the model about spend and would rather not pay its schema on every request.
@@ -117,7 +117,7 @@ The budget, its currency, the display currency shared by every figure, and which
 | Per turn | the `billTurns` session projection folds the session log host-side and pushes to the client — no polling |
 | Storage | in-memory ring buffer plus append-only JSONL, folded into a rollup before eviction; preferences in their own small JSON document; atomic replace and file locking borrowed from `dsh-atomic-write` |
 | Transport | the `ctx.connection.rpc` channel `/dsh-bill` when there is one, falling back to `POST /dsh-bill/api` |
-| UI | `conversation.view` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `sidebar.session.row.hover` / `settings.section`, built on the host's `--dsw-*` design tokens |
+| UI | `conversation.view` / `main` + `sidebar.panellist` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `sidebar.session.row.hover` / `settings.section`, built on the host's `--dsw-*` design tokens |
 
 ## License
 

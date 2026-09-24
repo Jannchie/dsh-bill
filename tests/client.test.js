@@ -52,6 +52,8 @@ globalThis.window = {
         // go through `react.runEffect`, inert until a test wants them.
         useState: (init) => [typeof init === 'function' ? init() : init, (v) => react.sets.push(v)],
         useEffect: (fn) => react.runEffect(fn),
+        useLayoutEffect: (fn) => react.runEffect(fn),
+        useRef: (init) => ({ current: init }),
         useMemo: (fn) => fn(),
         useCallback: (fn) => fn,
       }))
@@ -87,6 +89,8 @@ for (const key of [
   'settings.section',
   'sidebar.footer.action',
   'sidebar.session.row.hover',
+  'sidebar.panellist',
+  'main',
 ]) {
   assert(seatOf(key) !== undefined, 'registers into ' + key)
   assert(seats.includes(key), 'waits for ' + key + ' to be declared before registering')
@@ -122,9 +126,11 @@ assert(select({}) === null, 'a missing turn declines rather than throwing')
 }
 // List seats need a stable id; two entries sharing one id at the same priority
 // is a registration error, not a shadowing.
-for (const key of ['conversation.view', 'settings.section', 'sidebar.footer.action', 'conversation.composer.dock', 'sidebar.session.row.hover']) {
+for (const key of ['conversation.view', 'settings.section', 'sidebar.footer.action', 'conversation.composer.dock', 'sidebar.session.row.hover', 'sidebar.panellist']) {
   assert(typeof seatOf(key).id === 'string' && seatOf(key).id.length > 0, key + ' declares an id')
 }
+// The global panel is a keyed main entry, addressed by the icon's id.
+assert(seatOf('main')?.key === 'bill' && seatOf('sidebar.panellist')?.id === 'bill', 'the global panel and its sidebar icon share the id bill')
 // Labels are thunks so a language switch re-reads them without re-registering.
 assert(typeof seatOf('conversation.view').label === 'function', 'the view tab label is a thunk')
 assert(typeof seatOf('settings.section').label === 'function', 'the settings nav label is a thunk')
