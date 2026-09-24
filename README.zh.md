@@ -20,7 +20,7 @@ dsh plugin --profile web add dsh-bill
 
 - **成本归因** —— 按内容类型拆分账单:工具输出、模型输出、系统提示词、终端命令(按 `git` / `pnpm` / `rg` 分组)、工具输入、附件、系统提醒、用户输入。旭日图可下钻。
 - **每轮成本** —— 每个结束的轮次下面一行:这轮花了多少、几步、缓存命中率。数据来自会话日志本身,所以安装前的历史也有。
-- **常驻显示** —— 官方统计条下方一行:总消耗、本会话、高峰占比;侧边栏显示今日花费与预算进度。四处界面可在设置里逐项关闭。
+- **常驻显示** —— 官方统计条下方一行:总消耗、本会话、高峰占比;侧边栏显示今日花费与预算进度;鼠标停在侧边栏会话上,卡片里显示该会话的费用(DSH 0.1.7+)。五处界面可在设置里逐项关闭。
 - **报告** —— 会话内的「费用」标签页(与 Chat / Trajectory 并列):总费用、Token、缓存命中、高峰占比、月度预测、账户余额;按模型 / 会话 / 用途(含上下文压缩等循环开销)拆分;每日趋势与周 × 小时热力图。
 - **预算** —— 日 / 月 / 累计额度,超 80% 变黄,超支变红。
 - **多币种** —— 实时汇率,约 166 种货币;各模型基础单价按其官方定价货币显示。
@@ -83,7 +83,7 @@ dsh plugin --profile web add dsh-bill
 
 ## 配置
 
-预算、预算货币、所有数字共用的显示货币,以及四处界面各自是否显示,都在设置里的「费用统计」页设定,存于 `$DSH_HOME/dsh-bill/prefs.json`。两种货币是两个独立设置:预算货币是那句承诺(「每月 100 元」),不随显示货币变动。(不走 DSH 自己的设置文档:它的 API 代理只向浏览器暴露一份固定的命名空间白名单,插件的命名空间在那里既读不到也写不了。)
+预算、预算货币、所有数字共用的显示货币,以及五处界面各自是否显示,都在设置里的「费用统计」页设定,存于 `$DSH_HOME/dsh-bill/prefs.json`。两种货币是两个独立设置:预算货币是那句承诺(「每月 100 元」),不随显示货币变动。(不走 DSH 自己的设置文档:它的 API 代理只向浏览器暴露一份固定的命名空间白名单,插件的命名空间在那里既读不到也写不了。)
 
 `maxRecords`(内存环形缓冲条数,默认 20000)、`agentTool`(是否注册 `bill_stats`,默认 `true`)、`backfillTimeoutMs`(启动时历史导入的总预算,默认 60000 毫秒)与 `priceOverrides` 走插件配置,会在启动时校验 —— 写错的字段会指名报错,而不是让报告静静地空掉。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
 
@@ -117,7 +117,7 @@ dsh plugin --profile web add dsh-bill
 | 每轮 | `billTurns` session projection:host 侧折叠会话日志,推送到客户端,无轮询 |
 | 存储 | 内存环形缓冲 + 追加式 JSONL,淘汰前折叠为汇总;偏好为单独的小 JSON 文档;原子替换与文件锁复用 `dsh-atomic-write` |
 | 传输 | 优先 `ctx.connection.rpc` 通道 `/dsh-bill`,回落 `POST /dsh-bill/api` |
-| UI | `conversation.view` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `settings.section`,全部构建在 host 的 `--dsw-*` 设计令牌之上 |
+| UI | `conversation.view` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `sidebar.session.row.hover` / `settings.section`,全部构建在 host 的 `--dsw-*` 设计令牌之上 |
 
 ## License
 

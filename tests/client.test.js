@@ -86,6 +86,7 @@ for (const key of [
   'conversation.view',
   'settings.section',
   'sidebar.footer.action',
+  'sidebar.session.row.hover',
 ]) {
   assert(seatOf(key) !== undefined, 'registers into ' + key)
   assert(seats.includes(key), 'waits for ' + key + ' to be declared before registering')
@@ -102,7 +103,7 @@ assert(select({ turn: { turn: 3, status: 'open' }, seq: 9 }) === null, 'an open 
 assert(select({}) === null, 'a missing turn declines rather than throwing')
 // List seats need a stable id; two entries sharing one id at the same priority
 // is a registration error, not a shadowing.
-for (const key of ['conversation.view', 'settings.section', 'sidebar.footer.action', 'conversation.composer.dock']) {
+for (const key of ['conversation.view', 'settings.section', 'sidebar.footer.action', 'conversation.composer.dock', 'sidebar.session.row.hover']) {
   assert(typeof seatOf(key).id === 'string' && seatOf(key).id.length > 0, key + ' declares an id')
 }
 // Labels are thunks so a language switch re-reads them without re-registering.
@@ -117,10 +118,12 @@ console.log('host transport')
 // (issue #1). The transport is module-private, so it is driven the way the
 // page drives it — through the dock component's effects.
 const calls = []
+const payloads = []
 let rpcMode = 'transport'
 const rpc = {
-  call: (channel, endpoint) => {
+  call: (channel, endpoint, payload) => {
     calls.push('rpc:' + endpoint)
+    payloads.push(payload)
     if (rpcMode === 'transport') return Promise.reject(new Error('transport failure for ' + channel + '/' + endpoint + ': HTTP 405'))
     if (rpcMode === 'handler') return Promise.resolve({ ok: false, error: { message: 'handler said no' } })
     return Promise.resolve({ ok: true, value: { via: 'rpc' } })
@@ -199,6 +202,24 @@ calls.length = 0
 sets = await renderDock()
 assert(calls.includes('rpc:overview'), 'a fallback that also failed does not demote the channel')
 httpUp = true
+
+console.log('session hover card')
+// The hover card mounts one entry per open card, so it must ask for that one
+// session's fold — not the overview, which also totals every session.
+calls.length = 0
+payloads.length = 0
+rpcMode = 'ok'
+applyWithChannel()
+{
+  const cleanups = []
+  react.runEffect = (fn) => { const c = fn(); if (typeof c === 'function') cleanups.push(c) }
+  components['sidebar.session.row.hover']({ sessionId: 's9' })
+  await new Promise((r) => setTimeout(r, 0))
+  cleanups.forEach((c) => c())
+  react.runEffect = () => {}
+}
+assert(calls.length === 1 && calls[0] === 'rpc:session-cost', 'the hover card makes one session-cost call (got ' + calls.join(', ') + ')')
+assert(payloads[0]?.sessionId === 's9', 'the call is scoped to the hovered session')
 delete globalThis.fetch
 
 // Read the source once: several checks below are lints over what ships rather
