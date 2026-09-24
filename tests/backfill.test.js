@@ -77,9 +77,12 @@ const USAGE_EVENTS = [
  * Minimal session-query with the two methods the new backfill uses.
  * `listings` counts listing calls so a test can prove the pass ran. With
  * `hang`, `observeSession` never settles on its own — it rejects only when
- * the AbortSignal fires, mirroring the real service's observation lease.
+ * the AbortSignal fires, mirroring the real service's observation lease;
+ * `hangIds` does the same for only those sessions. `slowIds` ignore the
+ * signal and resolve normally after `slowMs`, standing in for a read that was
+ * already past its abort point when the budget ran out.
  */
-function fakeSessionQuery(sessions, { hang = false, rejectIds = [] } = {}) {
+function fakeSessionQuery(sessions, { hang = false, hangIds = [], slowIds = [], slowMs = 0, rejectIds = [] } = {}) {
   const listings = { count: 0 }
   return {
     listings,
@@ -90,11 +93,12 @@ function fakeSessionQuery(sessions, { hang = false, rejectIds = [] } = {}) {
     },
     async observeSession(id, { signal } = {}) {
       signal?.throwIfAborted()
-      if (hang) {
+      if (hang || hangIds.includes(id)) {
         return new Promise((_, reject) => {
           signal?.addEventListener('abort', () => reject(new Error('aborted', { cause: 'abort' })), { once: true })
         })
       }
+      if (slowIds.includes(id)) await sleep(slowMs)
       if (rejectIds.includes(id)) throw new Error('corrupt')
       const session = sessions.find((s) => s.id === id)
       return {
@@ -188,6 +192,31 @@ console.log('budget exhaustion')
   }
   assert(warns.some((w) => w.includes('backfill') && w.includes('budget')), 'budget exhaustion is reported')
   assert(!readRecords().some((r) => r.sessionId === 'sess-hang'), 'nothing is imported after an abort')
+}
+
+// ── late record: a worker still mid-session at the abort is waited for ──────
+// Before the pass awaited every worker, the first abort settled it while the
+// slow read was still in flight; its record then landed in memory after the
+// pass had already decided what to persist, and never reached the file.
+console.log('late record at the budget')
+{
+  const warns = []
+  const realWarn = console.warn
+  console.warn = (...args) => warns.push(args.join(' '))
+  try {
+    const sq = fakeSessionQuery(
+      [{ id: 'sess-hang-2', events: USAGE_EVENTS }, { id: 'sess-slow', events: USAGE_EVENTS }],
+      { hangIds: ['sess-hang-2'], slowIds: ['sess-slow'], slowMs: 400 },
+    )
+    boot({ maxRecords: 10, backfillTimeoutMs: 150 }, sq)
+    await waitFor(() => (readRecords().some((r) => r.sessionId === 'sess-slow') ? true : null), 2000).catch(() => {})
+  } finally {
+    console.warn = realWarn
+  }
+  const records = readRecords()
+  assert(records.some((r) => r.sessionId === 'sess-slow'), 'a record finished after the abort is still persisted')
+  assert(!records.some((r) => r.sessionId === 'sess-hang-2'), 'the aborted session imports nothing')
+  assert(warns.some((w) => w.includes('backfill budget exhausted')), 'the warning carries the budget reason')
 }
 
 // ── missing observeSession: older hosts skip the import gracefully ──────────
