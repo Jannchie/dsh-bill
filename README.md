@@ -20,7 +20,7 @@ Restart `dsh web` to pick it up.
 
 - **Cost attribution** — the bill split by kind of content: tool output, model output, system prompt, terminal commands (grouped by `git` / `pnpm` / `rg`), tool input, attachments, system reminders, user input. The sunburst drills in.
 - **Per-turn cost** — one line under every finished turn: what it cost, how many steps, the cache-hit rate. It reads the session log itself, so turns from before you installed the plugin are covered too.
-- **Always on screen** — a line under the shipped stats line (all-time, this session, peak share), today's spend against the budget in the sidebar, and each session's cost in its sidebar hover card (DSH 0.1.7+). Each of the five surfaces can be turned off individually in settings.
+- **Always on screen** — this session's cost as a pill beside the shipped stats in the composer dock, today's spend against the budget in the sidebar, and each session's cost in its sidebar hover card (DSH 0.1.7+). Each of the five surfaces can be turned off individually in settings.
 - **Report** — a **Cost** tab in the conversation, beside Chat and Trajectory: total, tokens, cache hit, peak share, monthly forecast, account balance; broken down by model, by session, and by purpose (including loop overhead such as context compaction); a daily trend and a weekday × hour heatmap.
 - **Budget** — a daily / monthly / all-time limit that turns amber past 80% and red when you go over.
 - **Multi-currency** — live rates for ~166 currencies; each model's base rate is shown in the currency its vendor prices it in.

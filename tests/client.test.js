@@ -189,8 +189,8 @@ const answered = (sets) => sets.find((s) => s && s.loading === false)
 
 applyWithChannel()
 let sets = await renderDock()
-assert(calls.includes('rpc:overview'), 'the channel is tried first')
-assert(calls.indexOf('http:overview') > calls.indexOf('rpc:overview'), 'a transport failure falls back to POST /dsh-bill/api')
+assert(calls.includes('rpc:session-cost'), 'the channel is tried first')
+assert(calls.indexOf('http:session-cost') > calls.indexOf('rpc:session-cost'), 'a transport failure falls back to POST /dsh-bill/api')
 assert(answered(sets)?.data?.via === 'http', 'the HTTP answer is the one shown, not the 405')
 
 calls.length = 0
@@ -202,14 +202,14 @@ calls.length = 0
 rpcMode = 'handler'
 applyWithChannel()
 sets = await renderDock()
-assert(calls.includes('rpc:overview') && !calls.includes('http:overview'), 'a handler error is an answer, not a transport failure: no fallback')
+assert(calls.includes('rpc:session-cost') && !calls.includes('http:session-cost'), 'a handler error is an answer, not a transport failure: no fallback')
 assert(answered(sets)?.error === 'handler said no', 'the handler\'s message is what surfaces')
 
 calls.length = 0
 rpcMode = 'ok'
 applyWithChannel()
 sets = await renderDock()
-assert(answered(sets)?.data?.via === 'rpc' && !calls.includes('http:overview'), 'a working channel is used as before')
+assert(answered(sets)?.data?.via === 'rpc' && !calls.includes('http:session-cost'), 'a working channel is used as before')
 
 calls.length = 0
 rpcMode = 'transport'
@@ -219,7 +219,7 @@ sets = await renderDock()
 assert(/transport failure .*HTTP 405/.test(answered(sets)?.error ?? ''), 'with both carriers down, the transport error is the one reported')
 calls.length = 0
 sets = await renderDock()
-assert(calls.includes('rpc:overview'), 'a fallback that also failed does not demote the channel')
+assert(calls.includes('rpc:session-cost'), 'a fallback that also failed does not demote the channel')
 httpUp = true
 
 console.log('session hover card')
