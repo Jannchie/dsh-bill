@@ -65,6 +65,18 @@ await import(pathToFileURL(clientPath).href)
 assert(exported !== null, 'the module loader factory ran')
 assert(typeof exported.apply === 'function', 'exports apply()')
 assert(Array.isArray(exported.inject) && exported.inject.includes('slots'), 'injects the slots service')
+// `locale` must be a DECLARED dependency, not an optional `ctx.get()` lookup.
+// Reading it without declaring it made the language a race between two halves
+// of the client bundle: lose it and `translate` stays on `fallbackT` (the
+// Chinese dictionary) while `localized()` omits `locale: NS`, so the tab, the
+// settings nav, the dock and the turn rows all render Chinese under an English
+// UI. Declaring it parks this half until the language service exists.
+//
+// `connection` and `layout` are read the same way and deliberately stay
+// undeclared: each has an acceptable degraded path (RPC falls back to
+// `/dsh-bill/api`; `layout` is only touched at click time), whereas a missing
+// locale has no correct fallback — Chinese is not a fallback for English.
+assert(exported.inject.includes('locale'), 'injects the locale service (the dictionaries are not optional)')
 
 console.log('slot registrations')
 // Running apply() against a stub slot registry proves the seats this half
