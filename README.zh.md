@@ -89,7 +89,7 @@ dsh plugin --profile web add dsh-bill
 
 预算、预算货币、所有数字共用的显示货币,以及五处界面各自是否显示,都在设置里的「费用统计」页设定,存于 `$DSH_HOME/dsh-bill/prefs.json`。两种货币是两个独立设置:预算货币是那句承诺(「每月 100 元」),不随显示货币变动。(不走 DSH 自己的设置文档:它的 API 代理只向浏览器暴露一份固定的命名空间白名单,插件的命名空间在那里既读不到也写不了。)
 
-`maxRecords`(内存环形缓冲条数,默认 20000)、`agentTool`(是否注册 `bill_stats`,默认 `true`)、`backfillTimeoutMs`(启动时历史导入的总预算,默认 60000 毫秒)与 `priceOverrides` 走插件配置,会在启动时校验 —— 写错的字段会指名报错,而不是让报告静静地空掉。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
+`maxRecords`(内存环形缓冲条数,默认 20000)、`agentTool`(是否注册 `bill_stats`,默认 `true`)、`backfillTimeoutMs`(启动时历史导入的总预算,默认 60000 毫秒)、`rateCurrency`(一个 ISO 货币代码,如 `USD`,让所有模型的基础单价都用它显示,而不是各厂商自己的标价货币 —— 在 DeepSeek 国际站按美元结算时有用)与 `priceOverrides` 走插件配置,会在启动时校验 —— 写错的字段会指名报错,而不是让报告静静地空掉。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
 
 ```yaml
 - insert:

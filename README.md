@@ -89,7 +89,7 @@ The session log holds token counts and model routes but **not the request bodies
 
 The budget, its currency, the display currency shared by every figure, and which of the five surfaces are shown are all set on the **Cost** page in settings, and stored in `$DSH_HOME/dsh-bill/prefs.json`. The two currencies are separate settings: the budget's is the promise ("¥100 a month") and does not follow the display. (Not in the harness's own settings document: its API proxy serves a fixed allowlist of namespaces to the browser, so a plugin's namespace is never readable or writable from there.)
 
-`maxRecords` (the in-memory ring buffer size, default 20000), `agentTool` (register `bill_stats`, default `true`), `backfillTimeoutMs` (the total budget for the boot-time history import, default 60000) and `priceOverrides` are plugin config and are validated at startup — a mistyped field is reported by name rather than leaving the report quietly empty. `~/.dsh/profiles/web/cordis.patch.yml` is only needed when you want to override a price:
+`maxRecords` (the in-memory ring buffer size, default 20000), `agentTool` (register `bill_stats`, default `true`), `backfillTimeoutMs` (the total budget for the boot-time history import, default 60000), `rateCurrency` (one ISO currency code, such as `USD`, to show every model's base rate in instead of its vendor's own list currency — useful when you buy DeepSeek on its international platform, which bills in USD) and `priceOverrides` are plugin config and are validated at startup — a mistyped field is reported by name rather than leaving the report quietly empty. `~/.dsh/profiles/web/cordis.patch.yml` is only needed when you want to override a price:
 
 ```yaml
 - insert:

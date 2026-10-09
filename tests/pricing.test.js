@@ -4,7 +4,7 @@
  * Run: node tests/pricing.test.js
  */
 import {
-  currencyFor, ensureFxLoaded, getFx, mergeOverrides, peakStateFor, priceRecord, roundCost,
+  currencyFor, ensureFxLoaded, getFx, mergeOverrides, peakStateFor, priceRecord, roundCost, setRateCurrency,
 } from '../lib/pricing.js'
 
 let failed = 0
@@ -77,6 +77,12 @@ assert(Math.abs(perM(sunAfter).usd - 0.22) < 1e-6, '... and is billed at the off
 console.log('native currency')
 assert(currencyFor('deepseek-v4-flash') === 'CNY', 'deepseek prices in CNY')
 assert(currencyFor('gpt-5') === 'USD', 'gpt-5 prices in USD')
+setRateCurrency('USD')
+assert(currencyFor('deepseek-v4-flash') === 'USD', 'rateCurrency renders deepseek in the configured currency')
+setRateCurrency('EUR')
+assert(currencyFor('gpt-5') === 'EUR', 'rateCurrency applies to every model')
+setRateCurrency(undefined)
+assert(currencyFor('deepseek-v4-flash') === 'CNY', 'clearing rateCurrency restores the vendor rules')
 assert(flat.base.currency === 'CNY', 'record base carries the native currency')
 
 console.log('unknown model')
