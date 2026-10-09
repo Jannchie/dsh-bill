@@ -51,7 +51,7 @@ function boot(maxRecords = 10, config = {}) {
 }
 let { stream, api } = boot()
 
-async function call(when) {
+async function call(when, sessionId = 's1') {
   const realNow = Date.now
   Date.now = () => when
   async function* source() {
@@ -59,7 +59,7 @@ async function call(when) {
     yield { type: 'usage', usage: { inputTokens: 100_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }
   }
   const options = {
-    provider: 'deepseek-official', model: 'deepseek-v4-pro', sessionId: 's1',
+    provider: 'deepseek-official', model: 'deepseek-v4-pro', sessionId,
     system: 'S'.repeat(500), tools: [],
     messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
   }
@@ -217,6 +217,19 @@ await new Promise((r) => setTimeout(r, 300))
 const cnyModel = (await ask({ action: 'dashboard', rangeDays: 0 }, native.api)).byModel[0]
 assert(cnyModel.base?.currency === 'CNY', 'and without it the vendor currency comes back (got ' + cnyModel.base?.currency + ')')
 assert(cnyModel.base.inputPerM === usdModel.base.inputPerM, 'only the currency changed, never the USD rate itself')
+
+console.log('session-less calls get their own row in the split')
+// A plugin calling the model on its own (an auto-review before a tool call)
+// passes no sessionId. That spend is in the total, so the split must carry it
+// too, or the per-session rows quietly sum to less than what was paid.
+await call(Date.now() - 30_000, null)
+const parts = await ask({ action: 'dashboard', rangeDays: 1 }, reread.api)
+assert(parts.noSession && parts.noSession.calls === 1, 'the session-less call is its own row (got ' + JSON.stringify(parts.noSession) + ')')
+assert(parts.bySession.every((r) => r.sessionId), 'and it is not listed as a session')
+const partsSum = parts.bySession.reduce((s, r) => s + r.usd, 0) + parts.noSession.usd
+assert(near(partsSum, parts.totalUsd, 1e-6), 'sessions plus the session-less row add up to the total')
+const scoped = await ask({ action: 'dashboard', rangeDays: 1, sessionId: 's1' }, reread.api)
+assert(scoped.noSession === null && scoped.calls === 1, 'a session report leaves it out')
 
 console.log(failed === 0 ? '\nALL PASSED' : `\n${failed} FAILED`)
 process.exit(failed === 0 ? 0 : 1)
