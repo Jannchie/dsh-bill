@@ -4,7 +4,8 @@
  * Run: node tests/pricing.test.js
  */
 import {
-  currencyFor, ensureFxLoaded, getFx, mergeOverrides, peakStateFor, priceRecord, roundCost, setRateCurrency,
+  cacheWrite1hOf, cacheWriteRateOf, currencyFor, ensureFxLoaded, getFx, mergeOverrides, peakStateFor, priceRecord,
+  ratesFor, roundCost, setRateCurrency,
 } from '../lib/pricing.js'
 
 let failed = 0
@@ -145,6 +146,30 @@ assert(Math.abs(both1M('weird-model-thinking').usd - 198) < 1e-6, 'a literal cat
 // Resolution finds a real entry or nothing — it never invents one.
 const nothing = both1M('gw/weird-model-2-high')
 assert(nothing.usd === null && !nothing.priced, 'no catalogue entry anywhere stays unpriced, not $0')
+
+console.log('one-hour cache writes are priced from the reported split')
+// A five-minute write is the card's cache-write rate; a one-hour write is what
+// llm-pricing bills for `cacheCreation1hInputTokens`. The split rides on the
+// usage report as `cacheWrite1hTokens`, a subset of `cacheWriteTokens`.
+mergeOverrides({ 'ttl-test-model': { inputPerM: 4, outputPerM: 20, cacheReadPerM: 0.2, cacheWritePerM: 5 } })
+const writes = (long) => priceRecord(rec('ttl-test-model', beforePeak, {
+  cacheWriteTokens: 1e6, ...(long === undefined ? {} : { cacheWrite1hTokens: long }),
+})).usd
+const shortOnly = writes(undefined)
+assert(Math.abs(shortOnly - 5) < 1e-6, 'no split: every write at the five-minute rate (got ' + shortOnly + ')')
+assert(writes(0) === shortOnly, 'a zero split prices exactly like no split')
+const longOnly = writes(1e6)
+assert(longOnly > shortOnly, 'one-hour writes cost more than five-minute writes (' + longOnly + ' > ' + shortOnly + ')')
+const mixed = writes(4e5)
+assert(Math.abs(mixed - (0.6 * shortOnly + 0.4 * longOnly)) < 1e-6, 'a mixed call prices each share at its own rate (got ' + mixed + ')')
+assert(writes(5e6) === longOnly, 'an over-reported split cannot bill more writes than there were')
+assert(cacheWrite1hOf({ cacheWriteTokens: 10, cacheWrite1hTokens: 99 }) === 10, 'cacheWrite1hOf clamps to the write total')
+assert(cacheWrite1hOf({ cacheWriteTokens: 10 }) === 0 && cacheWrite1hOf(undefined) === 0, 'cacheWrite1hOf is 0 without a split')
+const card = ratesFor('ttl-test-model', beforePeak)
+const blended = cacheWriteRateOf(card, { cacheWriteTokens: 1e6, cacheWrite1hTokens: 4e5 }) * 1e6
+assert(Math.abs(blended - mixed) < 1e-6, 'the hand-pricing write rate agrees with priceRecord (got ' + blended + ')')
+assert(cacheWriteRateOf(card, { cacheWriteTokens: 1e6 }) === card.cacheCreationInputCostPerToken, 'without a split the hand-pricing rate is the card rate')
+mergeOverrides(undefined)
 
 console.log('fx')
 ensureFxLoaded().then(() => {
