@@ -246,6 +246,14 @@ const halfPrice = validate({ priceOverrides: { 'my-model': { inputPerM: 1 } } })
 assert(halfPrice.issues?.some((i) => i.path?.join('.') === 'priceOverrides.my-model.outputPerM'),
   'a half-specified override is refused at its exact path')
 
+assert(validate({ rateCurrency: 'USD' }).value.rateCurrency === 'USD', 'a currency code passes through')
+assert(validate({ rateCurrency: ' usd ' }).value.rateCurrency === 'USD', 'a lower-case code is normalised')
+assert(validate({}).value.rateCurrency === undefined, 'rateCurrency stays unset by default')
+for (const bad of ['XYZ', 'US', 'dollars', 840]) {
+  assert(validate({ rateCurrency: bad }).issues?.[0]?.path?.[0] === 'rateCurrency',
+    'rateCurrency ' + JSON.stringify(bad) + ' is refused, naming the field')
+}
+
 console.log('the plugin declares no hard dependency')
 assert(Array.isArray(plugin.inject) && plugin.inject.length === 0,
   'inject is empty, so a carrier-less assembly still records (got ' + JSON.stringify(plugin.inject) + ')')

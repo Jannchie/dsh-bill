@@ -34,7 +34,7 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps
  * assembly provides, so the RPC and projection children never start — which is
  * also the assertion that their absence costs nothing.
  */
-function boot(maxRecords = 10) {
+function boot(maxRecords = 10, config = {}) {
   const instance = {}
   const services = {
     webServer: { register: (r) => { instance.api = r.handler } },
@@ -46,7 +46,7 @@ function boot(maxRecords = 10) {
     on: (name, fn) => { if (name === 'llm/stream') instance.stream = fn },
     inject: (names, apply) => { if (names.every((n) => services[n])) apply(ctx) },
   }
-  plugin.apply(ctx, { maxRecords })
+  plugin.apply(ctx, { maxRecords, ...config })
   return instance
 }
 let { stream, api } = boot()
@@ -203,6 +203,20 @@ assert(archivedDays.length > 0, 'archived days come back with a total and no ful
 const allKeys = stillEverything.timelineDays.map((d) => d.day)
 const span = Math.round((Date.parse(allKeys[allKeys.length - 1]) - Date.parse(allKeys[0])) / 86400000) + 1
 assert(allKeys.length === span, 'all time has a bar for every day it spans (' + allKeys.length + ' of ' + span + ')')
+
+console.log('rateCurrency restates the rate card of records already on disk')
+// The records above were stamped CNY when they were priced. The rate card's
+// currency is a display rule, so a restart with `rateCurrency` shows them in
+// it, and a restart without it shows the vendor's own again.
+const inUsd = boot(25, { rateCurrency: 'USD' })
+await new Promise((r) => setTimeout(r, 300))
+const usdModel = (await ask({ action: 'dashboard', rangeDays: 0 }, inUsd.api)).byModel[0]
+assert(usdModel.base?.currency === 'USD', 'the stored CNY stamp renders in the configured currency (got ' + usdModel.base?.currency + ')')
+const native = boot(25)
+await new Promise((r) => setTimeout(r, 300))
+const cnyModel = (await ask({ action: 'dashboard', rangeDays: 0 }, native.api)).byModel[0]
+assert(cnyModel.base?.currency === 'CNY', 'and without it the vendor currency comes back (got ' + cnyModel.base?.currency + ')')
+assert(cnyModel.base.inputPerM === usdModel.base.inputPerM, 'only the currency changed, never the USD rate itself')
 
 console.log(failed === 0 ? '\nALL PASSED' : `\n${failed} FAILED`)
 process.exit(failed === 0 ? 0 : 1)
