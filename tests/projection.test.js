@@ -10,6 +10,7 @@
  */
 import plugin, { Config } from '../lib/index.js'
 import { billLiveProjection as live, billTurnsProjection as unit } from '../lib/projection.js'
+import { mergeOverrides } from '../lib/pricing.js'
 
 let failed = 0
 function assert(cond, msg) {
@@ -106,6 +107,24 @@ assert(unit.stateSchema.parse(roundTripped) === roundTripped, 'a checkpointed st
 let rejected = false
 try { unit.stateSchema.parse({ turns: 'nope' }) } catch { rejected = true }
 assert(rejected, 'a malformed checkpoint is refused, so the host refolds from init')
+
+console.log('one-hour cache writes are carried through the fold and priced')
+mergeOverrides({ 'ttl-test-model': { inputPerM: 4, outputPerM: 20, cacheReadPerM: 0.2, cacheWritePerM: 5 } })
+const TTL_HEADER = event('request/header', { header: { config: { provider: 'anthropic', model: 'ttl-test-model' } }, reason: 'initial' })
+const withSplit = (long) => ({ ...usage(0, 0, 0, 1_000_000), ...(long === undefined ? {} : { cacheWrite1hTokens: long }) })
+const shortFold = unit.view(fold([TTL_HEADER, event('assistant/message', { turn: 0, step: 0, message: {}, usage: withSplit(undefined) })]))
+const longFold = fold([
+  TTL_HEADER,
+  // The streamed chunk under-reports the split; the finalized message corrects it.
+  event('assistant/chunk', { turn: 0, step: 0, chunk: { type: 'usage', usage: withSplit(100_000) } }),
+  event('assistant/message', { turn: 0, step: 0, message: {}, usage: withSplit(1_000_000) }),
+])
+const longView = unit.view(longFold)
+assert(longFold.totals.cacheWrite1hTokens === 1_000_000, 'a corrected repeat replaces the split too (got ' + longFold.totals.cacheWrite1hTokens + ')')
+assert(longView.turns[0].cacheWrite1hTokens === 1_000_000 && longView.cacheWrite1hTokens === 1_000_000, 'the split reaches the row and the totals')
+assert(longView.totalUsd > shortFold.totalUsd, 'one-hour writes cost more than the same writes at five minutes (' + longView.totalUsd + ' > ' + shortFold.totalUsd + ')')
+assert(shortFold.cacheWrite1hTokens === 0, 'a route without the split reports none')
+mergeOverrides(undefined)
 
 console.log('an unknown model reports unpriced rather than free')
 const unknown = fold([

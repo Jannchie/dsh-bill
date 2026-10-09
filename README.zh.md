@@ -69,6 +69,7 @@ dsh plugin --profile web add dsh-bill
 
 - models.dev + OpenRouter 双目录,24h 缓存并落盘,失败回退内置历史快照;
 - DeepSeek 官方直连价覆盖目录报价,按调用时刻自动选择峰谷价;
+- 提示词缓存写入按 provider 报告的实际时长计价:用量报告带 `cacheWrite1hTokens`(`cacheWriteTokens` 中写入 1 小时缓存的部分,Anthropic 在路由请求长缓存时返回)时,这部分按 1 小时写入计价,其余按 5 分钟写入计价;没有该字段时全部按 5 分钟写入计价;
 - 模型名归一化,匹配不到的标记为「?」,不参与合计 —— 不估算;
 - `priceOverrides` 可覆盖或新增任意价格(通常用不到)。
 

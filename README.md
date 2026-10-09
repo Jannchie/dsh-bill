@@ -69,6 +69,7 @@ The sample is the cost-related plugins under the GitHub `dsh-plugin` topic with 
 
 - two catalogues, models.dev and OpenRouter, cached for 24h and written to disk, falling back to a built-in historical snapshot on failure;
 - DeepSeek's own direct rates override the catalogue, and the peak / off-peak rate is chosen from the call's timestamp;
+- a prompt-cache write is priced at the lifetime the provider reports it bought: when the usage report carries `cacheWrite1hTokens` (the one-hour share of `cacheWriteTokens`, which Anthropic returns for a route that asks for the long cache), that share is billed as a one-hour write and the rest as a five-minute write; without it every write is a five-minute write;
 - model names are normalised, and anything that still fails to match is flagged `?` and excluded from totals — nothing is estimated;
 - `priceOverrides` can override or add any price (rarely needed).
 
