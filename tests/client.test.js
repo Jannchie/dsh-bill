@@ -50,7 +50,12 @@ globalThis.window = {
         // Initialisers run and setters are recorded, so a component can be
         // called as a plain function below and its effects observed. Effects
         // go through `react.runEffect`, inert until a test wants them.
-        useState: (init) => [typeof init === 'function' ? init() : init, (v) => react.sets.push(v)],
+        // A functional update is applied to the state it was handed, so what
+        // is recorded is always the next state rather than the updater.
+        useState: (init) => {
+          let value = typeof init === 'function' ? init() : init
+          return [value, (v) => { value = typeof v === 'function' ? v(value) : v; react.sets.push(value) }]
+        },
         useEffect: (fn) => react.runEffect(fn),
         useLayoutEffect: (fn) => react.runEffect(fn),
         useRef: (init) => ({ current: init }),
@@ -455,6 +460,82 @@ console.log('dictionary values are literals')
 // plain strings.
 const dictBodies = source.slice(source.indexOf('var DICT_ZH'), source.indexOf('function fallbackT'))
 assert(!/':\s*t\(/.test(dictBodies), 'no dictionary value calls t()')
+
+console.log('spend stream')
+// With the host's spend stream live, `periods` is read from it and nothing is
+// polled; other actions refetch only when the stream says the spend moved.
+// The stream is driven the way the Remote hands it over: `$mount`, then a
+// `$stream` whose items the client must `accept()`.
+{
+  const pending = []
+  let pushItem = null
+  let mounted = null
+  let accepted = 0
+  const stream = {
+    [Symbol.asyncIterator]: () => ({
+      next: () => new Promise((resolve) => {
+        pushItem = (value) => resolve({ done: false, value: { value, accept: () => { accepted++ } } })
+        if (pending.length) pushItem(pending.shift())
+      }),
+    }),
+    dispose: async () => {},
+  }
+  const remote = {
+    $mount: async (contribution) => { mounted = contribution; return async () => {} },
+    $stream: (options) => { stream.options = options; return stream },
+    dshBill: { watch: () => 'handle' },
+  }
+  const streamCtx = {
+    get: (name) => (name === 'remote' ? remote : undefined),
+    remote,
+    effect: () => {},
+    inject: (names, fn) => fn(streamCtx),
+  }
+  calls.length = 0
+  rpcMode = 'ok'
+  exported.apply({
+    get: (name) => {
+      if (name === 'slots') {
+        return {
+          inject: (key, effect) => effect(),
+          register: (options, component) => { components[options.name] = component; return () => {} },
+        }
+      }
+      if (name === 'connection') return { rpc }
+      return undefined
+    },
+    effect: () => {},
+    inject: (names, fn) => { if (names[0] === 'remote') fn(streamCtx) },
+  })
+  await new Promise((r) => setTimeout(r, 0))
+  assert(JSON.stringify(mounted) === JSON.stringify(exported.spendRemote), 'the client mounts the spend Remote')
+  assert(stream.options.open(new AbortController().signal) === 'handle', 'and opens dshBill/watch on each generation')
+  pushItem({ rev: 1, periods: { day: 1.5, month: 2, all: 3 }, fx: { USD: 1, CNY: 7 } })
+  await new Promise((r) => setTimeout(r, 0))
+  assert(accepted === 1, 'each opening item is accepted, so a reconnect counts as healthy')
+
+  const cleanups = []
+  react.runEffect = (fn) => { const c = fn(); if (typeof c === 'function') cleanups.push(c) }
+  react.sets = []
+  calls.length = 0
+  components['sidebar.footer.action']({})
+  await new Promise((r) => setTimeout(r, 0))
+  assert(!calls.some((c) => c.endsWith('periods')), 'periods is not fetched while the stream is live')
+  assert(react.sets.some((v) => v && v.data && v.data.periods && v.data.periods.day === 1.5), 'it is read from the stream')
+
+  calls.length = 0
+  components['sidebar.session.row.hover']({ sessionId: 's9' })
+  await new Promise((r) => setTimeout(r, 0))
+  assert(calls.filter((c) => c.endsWith('session-cost')).length === 1, 'another action fetches once on mount')
+  await new Promise((r) => setTimeout(r, 3300))
+  assert(calls.filter((c) => c.endsWith('session-cost')).length === 1, 'and not again while the spend stands still')
+  pushItem({ rev: 2, periods: { day: 2, month: 2, all: 3 } })
+  await new Promise((r) => setTimeout(r, 50))
+  assert(calls.filter((c) => c.endsWith('session-cost')).length === 2, 'a spend move refetches it')
+  assert(react.sets.some((v) => v && v.data && v.data.periods && v.data.periods.day === 2), 'and the pushed periods are shown')
+  cleanups.forEach((c) => c())
+  react.runEffect = () => {}
+}
 
 console.log(failed === 0 ? '\nALL PASSED' : `\n${failed} FAILED`)
 process.exit(failed === 0 ? 0 : 1)

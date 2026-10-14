@@ -121,6 +121,7 @@ The budget, its currency, the display currency shared by every figure, and which
 | Backfill | lists the session log once, imports sessions it never recorded with a cancellable budget, deduplicating on `turn:step` |
 | Per turn | the `billTurns` session projection folds the session log host-side and pushes to the client — no polling; `billLive` pushes the open step's estimated output as its own small value |
 | Storage | in-memory ring buffer plus append-only JSONL, folded into a rollup before eviction; preferences in their own small JSON document; atomic replace and file locking borrowed from `dsh-atomic-write` |
+| Account-wide | the `dshBill/watch` Remote stream, on the Gateway's `/api/remote.mux` socket the client already holds, pushes today / month / all-time on open and whenever the ring changes or the day turns — no polling; other actions refetch only when it reports a change. Hosts without it fall back to polling |
 | Transport | the `ctx.connection.rpc` channel `/dsh-bill` when there is one, falling back to `POST /dsh-bill/api` |
 | UI | `conversation.view` / `main` + `sidebar.panellist` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `sidebar.session.row.hover` / `settings.section`, built on the host's `--dsw-*` design tokens |
 

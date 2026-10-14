@@ -121,6 +121,7 @@ dsh plugin --profile web add dsh-bill
 | 回填 | 会话日志只列一次,以可取消的预算导入未记录的会话,按 `turn:step` 去重 |
 | 每轮 | `billTurns` session projection:host 侧折叠会话日志,推送到客户端,无轮询;`billLive` 另发一条只含在途输出的估算 |
 | 存储 | 内存环形缓冲 + 追加式 JSONL,淘汰前折叠为汇总;偏好为单独的小 JSON 文档;原子替换与文件锁复用 `dsh-atomic-write` |
+| 全局 | `dshBill/watch` Remote 流:走客户端已建立的 Gateway `/api/remote.mux` 连接,打开时及账本变化、跨日时推送今日 / 本月 / 累计,无轮询;其他请求仅在流报告变化时重新获取。没有该流的 host 回落到轮询 |
 | 传输 | 优先 `ctx.connection.rpc` 通道 `/dsh-bill`,回落 `POST /dsh-bill/api` |
 | UI | `conversation.view` / `main` + `sidebar.panellist` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `sidebar.session.row.hover` / `settings.section`,全部构建在 host 的 `--dsw-*` 设计令牌之上 |
 
