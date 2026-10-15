@@ -122,7 +122,7 @@ The budget, its currency, the display currency shared by every figure, and which
 | Per turn | the `billTurns` session projection folds the session log host-side and pushes to the client — no polling; `billLive` pushes the open step's estimated output as its own small value |
 | Account-wide | today / month / all time belong to no session, so they are long-polled: one request per window carries the `rev` it holds, and the host answers when spend moves, the day turns, or after 25 s |
 | Storage | in-memory ring buffer plus append-only JSONL, folded into a rollup before eviction; preferences in their own small JSON document; atomic replace and file locking borrowed from `dsh-atomic-write` |
-| Transport | the `ctx.connection.rpc` channel `/dsh-bill` when there is one, falling back to `POST /dsh-bill/api` |
+| Transport | `POST /dsh-bill/api` (the harness cannot mount a plugin `ctx.connection.rpc` channel yet) |
 | UI | `conversation.view` / `main` + `sidebar.panellist` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `sidebar.session.row.hover` / `settings.section`, built on the host's `--dsw-*` design tokens |
 
 ## License

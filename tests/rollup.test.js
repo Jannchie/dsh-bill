@@ -31,7 +31,7 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps
  * The stub mirrors the two cordis mechanisms the plugin depends on: `get` for
  * an optional probe, and `inject(names, cb)` for a child fiber that starts
  * only once every named service exists. `webServer` is the only one this fake
- * assembly provides, so the RPC and projection children never start — which is
+ * assembly provides, so the projection and tool children never start — which is
  * also the assertion that their absence costs nothing.
  */
 function boot(maxRecords = 10, config = {}) {

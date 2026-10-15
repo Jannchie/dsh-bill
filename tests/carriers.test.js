@@ -1,8 +1,9 @@
 /**
- * The two carriers must be independent: a Connection service whose
- * `rpc.handle` throws (DSH 0.1.5, where it resolves `webServer` through the
- * wrong fiber — issue #1) must not take the HTTP route with it, and must say
- * so rather than dying quietly inside its child fiber.
+ * `POST /dsh-bill/api` is the one carrier. The Connection RPC channel is not
+ * registered at all — `rpc.handle` cannot mount for a plugin (it resolves
+ * `webServer` through the Connection plugin's own fiber — issue #1) — so a host
+ * that offers `connection` must see no call to it and no warning about it.
+ * The route must also survive a hot reload without leaking.
  *
  * Run: node tests/carriers.test.js
  */
@@ -31,9 +32,9 @@ function assert(cond, msg) {
  * passed in to share that table between two boots, which is what a hot reload
  * does.
  */
-function boot(handle, registry = new Map(), config = {}) {
+function boot(registry = new Map(), config = {}) {
   const effects = []
-  const instance = { warnings: [], routes: [], registry, injected: [] }
+  const instance = { warnings: [], routes: [], registry, injected: [], handled: [] }
   const services = {
     webServer: {
       register: (route) => {
@@ -44,7 +45,7 @@ function boot(handle, registry = new Map(), config = {}) {
         return () => { registry.delete(key) }
       },
     },
-    connection: { rpc: { handle } },
+    connection: { rpc: { handle: (...args) => { instance.handled.push(args); return () => {} } } },
   }
   const ctx = {
     ...services,
@@ -57,11 +58,6 @@ function boot(handle, registry = new Map(), config = {}) {
     get: (name) => services[name],
     on: () => {},
     inject: (names, apply) => { instance.injected.push(...names); if (names.every((n) => services[n])) apply(ctx) },
-  }
-  instance.effectFor = (label) => {
-    const hit = effects.find((e) => e.label === label)
-    if (!hit) throw new Error(`no effect labelled ${JSON.stringify(label)}`)
-    return hit.dispose
   }
   instance.disposeAll = () => { for (const e of effects) e.dispose() }
   const warn = console.warn
@@ -81,39 +77,16 @@ async function ask(handler, body) {
   return out
 }
 
-console.log('rpc.handle throws (DSH 0.1.5)')
-let broken = null
-try {
-  broken = boot(() => { throw new Error('cannot get property "webServer" without inject') })
-} catch (error) {
-  assert(false, 'apply() must not throw: ' + error.message)
-}
-if (broken) {
-  const api = broken.routes.find((r) => r.path === '/dsh-bill/api')
-  assert(api !== undefined, 'POST /dsh-bill/api is still registered')
-  assert(broken.warnings.some((w) => /dsh-bill.*rpc channel/.test(w)), 'the missing channel is reported, not swallowed')
-  assert(broken.warnings.some((w) => /without inject/.test(w)), 'the warning carries the cause')
+console.log('one carrier')
+{
+  const host = boot()
+  const api = host.routes.find((r) => r.path === '/dsh-bill/api')
+  assert(api !== undefined, 'POST /dsh-bill/api is registered')
+  assert(host.handled.length === 0, 'no RPC channel is asked for, though the host offers connection')
+  assert(host.warnings.length === 0, 'nothing is warned about')
   const pong = api && await ask(api.handler, { action: 'ping' })
   assert(pong && pong.ok === true, 'the HTTP route answers')
-  assert(typeof broken.dispose === 'function', 'the effect still returns a disposer')
 }
-
-console.log('rpc.handle works')
-let disposed = false
-const mounted = {}
-const working = boot((channel, handler) => {
-  mounted.channel = channel
-  mounted.rpc = handler
-  return () => { disposed = true }
-})
-assert(mounted.channel === '/dsh-bill', 'the channel is registered')
-assert(working.warnings.length === 0, 'nothing is warned about')
-const viaRpc = await mounted.rpc('ping', {})
-assert(viaRpc.ok === true && viaRpc.value.ok === true, 'the channel dispatches to the same actions')
-// Dispose the channel's own effect by label. It used to be the last child.effect
-// registered, which stopped being true once the HTTP route below was wrapped too.
-working.effectFor('dsh-bill: rpc channel')()
-assert(disposed, 'disposing the effect disposes the channel')
 
 console.log('a hot reload replaces the HTTP route instead of leaking it')
 // One shared route table across two boots is exactly what the host does when it
@@ -121,7 +94,7 @@ console.log('a hot reload replaces the HTTP route instead of leaking it')
 // registers again into the same table.
 {
   const registry = new Map()
-  const first = boot(() => { throw new Error('no rpc here') }, registry)
+  const first = boot(registry)
   const firstApi = first.routes.find((r) => r.path === '/dsh-bill/api')
   assert(firstApi !== undefined, 'the first generation registers /dsh-bill/api')
 
@@ -134,7 +107,7 @@ console.log('a hot reload replaces the HTTP route instead of leaking it')
   let second = null
   let threw = null
   try {
-    second = boot(() => { throw new Error('no rpc here') }, registry)
+    second = boot(registry)
   } catch (error) {
     threw = error
   }
@@ -151,9 +124,9 @@ console.log('agentTool: false leaves bill_stats unregistered')
 // The tool list is the front of the prompt-cache prefix, so the only cache-safe
 // way to keep the schema off requests is to never ask for the registry at all.
 {
-  const withTool = boot(() => () => {})
+  const withTool = boot()
   assert(withTool.injected.includes('tools'), 'by default the plugin asks for the tool registry')
-  const without = boot(() => () => {}, new Map(), { agentTool: false })
+  const without = boot(new Map(), { agentTool: false })
   assert(!without.injected.includes('tools'), 'with agentTool: false it never asks for the tool registry')
   assert(without.routes.some((r) => r.path === '/dsh-bill/api'), 'the HTTP carrier is still mounted')
   assert(without.warnings.length === 0, 'nothing is warned about')

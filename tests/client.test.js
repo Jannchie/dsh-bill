@@ -72,9 +72,8 @@ assert(Array.isArray(exported.inject) && exported.inject.includes('slots'), 'inj
 // settings nav, the dock and the turn rows all render Chinese under an English
 // UI. Declaring it parks this half until the language service exists.
 //
-// `connection` and `layout` are read the same way and deliberately stay
-// undeclared: each has an acceptable degraded path (RPC falls back to
-// `/dsh-bill/api`; `layout` is only touched at click time), whereas a missing
+// `layout` is read the same way and deliberately stays undeclared: it has
+// an acceptable degraded path (it is only touched at click time), whereas a missing
 // locale has no correct fallback — Chinese is not a fallback for English.
 assert(exported.inject.includes('locale'), 'injects the locale service (the dictionaries are not optional)')
 
@@ -148,32 +147,33 @@ assert(typeof seatOf('conversation.view').label === 'function', 'the view tab la
 assert(typeof seatOf('settings.section').label === 'function', 'the settings nav label is a thunk')
 
 console.log('host transport')
-// The client being handed `connection.rpc` does not prove the host mounted
-// the `/dsh-bill` channel: on DSH 0.1.5 `rpc.handle` throws for every plugin,
-// so the channel object exists, the route does not, and every call comes back
-// `transport failure ... HTTP 405` while `POST /dsh-bill/api` answers fine
-// (issue #1). The transport is module-private, so it is driven the way the
-// page drives it — through the dock component's effects.
+// Every request is a POST to /dsh-bill/api. A `connection.rpc` handed to the
+// client is ignored: the host cannot mount a plugin channel (`rpc.handle`
+// resolves `webServer` through the Connection plugin's own fiber — issue #1),
+// so trying it first only ever cost a dead round-trip per page. The transport
+// is module-private, so it is driven the way the page drives it — through the
+// components' effects.
 const calls = []
 const payloads = []
-let rpcMode = 'transport'
 const rpc = {
-  call: (channel, endpoint, payload) => {
+  call: (channel, endpoint) => {
     calls.push('rpc:' + endpoint)
-    payloads.push(payload)
-    if (rpcMode === 'transport') return Promise.reject(new Error('transport failure for ' + channel + '/' + endpoint + ': HTTP 405'))
-    if (rpcMode === 'handler') return Promise.resolve({ ok: false, error: { message: 'handler said no' } })
     return Promise.resolve({ ok: true, value: { via: 'rpc' } })
   },
 }
+// What the host answers to one action; swapped by the sections below.
+let answer = () => Promise.resolve({ via: 'http' })
 let httpUp = true
 globalThis.fetch = (url, init) => {
-  calls.push('http:' + JSON.parse(init.body).action)
+  const payload = JSON.parse(init.body)
+  calls.push('http:' + payload.action)
+  payloads.push(payload)
+  if (url !== '/dsh-bill/api' || init.method !== 'POST') return Promise.reject(new Error('unexpected request ' + init.method + ' ' + url))
   if (!httpUp) return Promise.reject(new TypeError('Failed to fetch'))
-  return Promise.resolve({ json: () => Promise.resolve({ via: 'http' }) })
+  return answer(payload).then((json) => ({ json: () => Promise.resolve(json) }))
 }
-// apply() is what resolves the channel, so re-running it hands the page a
-// fresh one — the same shape as a reload against a host that has it.
+// apply() is handed a channel anyway, the same shape as a host whose client
+// carries `connection.rpc`, to prove it is left alone.
 const components = {}
 function applyWithChannel() {
   exported.apply({
@@ -207,37 +207,14 @@ const answered = (sets) => sets.find((s) => s && s.loading === false)
 
 applyWithChannel()
 let sets = await renderDock()
-assert(calls.includes('rpc:session-cost'), 'the channel is tried first')
-assert(calls.indexOf('http:session-cost') > calls.indexOf('rpc:session-cost'), 'a transport failure falls back to POST /dsh-bill/api')
-assert(answered(sets)?.data?.via === 'http', 'the HTTP answer is the one shown, not the 405')
+assert(calls.includes('http:session-cost'), 'the request goes to POST /dsh-bill/api')
+assert(!calls.some((c) => c.startsWith('rpc:')), 'the connection channel is never tried')
+assert(answered(sets)?.data?.via === 'http', 'the HTTP answer is the one shown')
 
 calls.length = 0
-sets = await renderDock()
-assert(!calls.some((c) => c.startsWith('rpc:')), 'after a successful fallback the dead channel is not tried again')
-assert(answered(sets)?.data?.via === 'http', 'HTTP keeps serving')
-
-calls.length = 0
-rpcMode = 'handler'
-applyWithChannel()
-sets = await renderDock()
-assert(calls.includes('rpc:session-cost') && !calls.includes('http:session-cost'), 'a handler error is an answer, not a transport failure: no fallback')
-assert(answered(sets)?.error === 'handler said no', 'the handler\'s message is what surfaces')
-
-calls.length = 0
-rpcMode = 'ok'
-applyWithChannel()
-sets = await renderDock()
-assert(answered(sets)?.data?.via === 'rpc' && !calls.includes('http:session-cost'), 'a working channel is used as before')
-
-calls.length = 0
-rpcMode = 'transport'
 httpUp = false
-applyWithChannel()
 sets = await renderDock()
-assert(/transport failure .*HTTP 405/.test(answered(sets)?.error ?? ''), 'with both carriers down, the transport error is the one reported')
-calls.length = 0
-sets = await renderDock()
-assert(calls.includes('rpc:session-cost'), 'a fallback that also failed does not demote the channel')
+assert(/Failed to fetch/.test(answered(sets)?.error ?? ''), 'a host that is down surfaces as an error')
 httpUp = true
 
 console.log('session hover card')
@@ -245,7 +222,6 @@ console.log('session hover card')
 // session's fold — not the overview, which also totals every session.
 calls.length = 0
 payloads.length = 0
-rpcMode = 'ok'
 applyWithChannel()
 {
   const cleanups = []
@@ -255,8 +231,15 @@ applyWithChannel()
   cleanups.forEach((c) => c())
   react.runEffect = () => {}
 }
-assert(calls.length === 1 && calls[0] === 'rpc:session-cost', 'the hover card makes one session-cost call (got ' + calls.join(', ') + ')')
+assert(calls.length === 1 && calls[0] === 'http:session-cost', 'the hover card makes one session-cost call (got ' + calls.join(', ') + ')')
 assert(payloads[0]?.sessionId === 's9', 'the call is scoped to the hovered session')
+
+/** Hold every `periods` request in `held` until a test answers it. */
+function holdPeriods(held) {
+  answer = (payload) => (payload.action !== 'periods'
+    ? Promise.resolve({})
+    : new Promise((resolve) => held.push(resolve)))
+}
 
 console.log('account-wide spend, long-polled')
 // Every surface showing today / month / all time shares one loop per window,
@@ -265,18 +248,11 @@ console.log('account-wide spend, long-polled')
 {
   const held = []
   const periodCalls = () => payloads.filter((p) => p && p.action === 'periods')
-  const originalCall = rpc.call
-  rpc.call = (channel, endpoint, payload) => {
-    calls.push('rpc:' + endpoint)
-    payloads.push(payload)
-    if (endpoint !== 'periods') return Promise.resolve({ ok: true, value: {} })
-    return new Promise((resolve) => held.push((value) => resolve({ ok: true, value })))
-  }
+  holdPeriods(held)
   calls.length = 0
   payloads.length = 0
   applyWithChannel()
   const cleanups = []
-  const states = []
   react.runEffect = (fn) => { const c = fn(); if (typeof c === 'function') cleanups.push(c) }
   react.sets = []
   components['sidebar.footer.action']({})
@@ -311,7 +287,6 @@ console.log('account-wide spend, long-polled')
   react.runEffect = () => {}
   await new Promise((r) => setTimeout(r, 0))
   assert(periodCalls().length === afterOld, 'once nothing shows the figures, the loop stops')
-  rpc.call = originalCall
 }
 
 console.log('a page opened in the background')
@@ -321,13 +296,7 @@ console.log('a page opened in the background')
 {
   const held = []
   const periodCalls = () => payloads.filter((p) => p && p.action === 'periods')
-  const originalCall = rpc.call
-  rpc.call = (channel, endpoint, payload) => {
-    calls.push('rpc:' + endpoint)
-    payloads.push(payload)
-    if (endpoint !== 'periods') return Promise.resolve({ ok: true, value: {} })
-    return new Promise((resolve) => held.push((value) => resolve({ ok: true, value })))
-  }
+  holdPeriods(held)
   globalThis.document.hidden = true
   await import(pathToFileURL(clientPath).href + '?hidden')
   calls.length = 0
@@ -346,7 +315,6 @@ console.log('a page opened in the background')
   cleanups.forEach((c) => c())
   react.runEffect = () => {}
   delete globalThis.document.hidden
-  rpc.call = originalCall
 }
 delete globalThis.fetch
 
