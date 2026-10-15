@@ -120,6 +120,7 @@ dsh plugin --profile web add dsh-bill
 | 归因 | 捕获时切分请求为分类片段,按缓存前缀位置分摊 |
 | 回填 | 会话日志只列一次,以可取消的预算导入未记录的会话,按 `turn:step` 去重 |
 | 每轮 | `billTurns` session projection:host 侧折叠会话日志,推送到客户端,无轮询;`billLive` 另发一条只含在途输出的估算 |
+| 账户级 | 今日 / 本月 / 累计不属于任何会话,改用长轮询:每个窗口一条请求,带上已有的 `rev`,host 在花费变动、跨日或 25 秒后才应答 |
 | 存储 | 内存环形缓冲 + 追加式 JSONL,淘汰前折叠为汇总;偏好为单独的小 JSON 文档;原子替换与文件锁复用 `dsh-atomic-write` |
 | 传输 | 优先 `ctx.connection.rpc` 通道 `/dsh-bill`,回落 `POST /dsh-bill/api` |
 | UI | `conversation.view` / `main` + `sidebar.panellist` / `conversation.chat.turnTail` / `conversation.composer.dock` / `sidebar.footer.action` / `sidebar.session.row.hover` / `settings.section`,全部构建在 host 的 `--dsw-*` 设计令牌之上 |

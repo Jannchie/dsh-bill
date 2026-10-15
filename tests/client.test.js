@@ -257,6 +257,62 @@ applyWithChannel()
 }
 assert(calls.length === 1 && calls[0] === 'rpc:session-cost', 'the hover card makes one session-cost call (got ' + calls.join(', ') + ')')
 assert(payloads[0]?.sessionId === 's9', 'the call is scoped to the hovered session')
+
+console.log('account-wide spend, long-polled')
+// Every surface showing today / month / all time shares one loop per window,
+// and the loop hands back the rev it holds so the host can sit on the request
+// until spend moves. Driven through the sidebar line, mounted twice.
+{
+  const held = []
+  const periodCalls = () => payloads.filter((p) => p && p.action === 'periods')
+  const originalCall = rpc.call
+  rpc.call = (channel, endpoint, payload) => {
+    calls.push('rpc:' + endpoint)
+    payloads.push(payload)
+    if (endpoint !== 'periods') return Promise.resolve({ ok: true, value: {} })
+    return new Promise((resolve) => held.push((value) => resolve({ ok: true, value })))
+  }
+  calls.length = 0
+  payloads.length = 0
+  applyWithChannel()
+  const cleanups = []
+  const states = []
+  react.runEffect = (fn) => { const c = fn(); if (typeof c === 'function') cleanups.push(c) }
+  react.sets = []
+  components['sidebar.footer.action']({})
+  components['sidebar.footer.action']({})
+  await new Promise((r) => setTimeout(r, 0))
+  assert(periodCalls().length === 1, 'two surfaces share one request (got ' + periodCalls().length + ')')
+  assert(periodCalls()[0].sinceRev === undefined, 'the first asks for the figures as they stand')
+
+  held.shift()({ rev: 'r1', periods: { day: 1, month: 1, all: 1 }, fx: { USD: 1 } })
+  await new Promise((r) => setTimeout(r, 0))
+  assert(react.sets.some((v) => v && v.data && v.data.periods && v.data.periods.day === 1), 'the answer reaches the surfaces')
+  assert(periodCalls().length === 2, 'the next request goes out at once')
+  assert(periodCalls()[1].sinceRev === 'r1' && periodCalls()[1].waitMs === 25000, 'carrying the rev it holds, to be held until spend moves')
+
+  const before = react.sets.length
+  held.shift()({ rev: 'r1', periods: { day: 1, month: 1, all: 1 }, fx: { USD: 1 } })
+  await new Promise((r) => setTimeout(r, 0))
+  assert(react.sets.length === before, 'a wait that ran out with nothing new re-renders nothing')
+
+  held.shift()({ rev: 'r2', periods: { day: 2, month: 2, all: 2 }, fx: { USD: 1 } })
+  await new Promise((r) => setTimeout(r, 0))
+  assert(react.sets.some((v) => v && v.data && v.data.periods && v.data.periods.day === 2), 'moved spend is shown')
+  assert(periodCalls().at(-1).sinceRev === 'r2', 'and the loop follows the new rev')
+
+  console.log('an older host, without a rev')
+  held.shift()({ periods: { day: 3, month: 3, all: 3 }, fx: { USD: 1 } })
+  await new Promise((r) => setTimeout(r, 50))
+  const afterOld = periodCalls().length
+  assert(held.length === 0, 'is not asked again at once: no rev means the three-second cadence, not a spin')
+
+  cleanups.forEach((c) => c())
+  react.runEffect = () => {}
+  await new Promise((r) => setTimeout(r, 0))
+  assert(periodCalls().length === afterOld, 'once nothing shows the figures, the loop stops')
+  rpc.call = originalCall
+}
 delete globalThis.fetch
 
 // Read the source once: several checks below are lints over what ships rather
