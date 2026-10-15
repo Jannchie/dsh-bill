@@ -313,6 +313,41 @@ console.log('account-wide spend, long-polled')
   assert(periodCalls().length === afterOld, 'once nothing shows the figures, the loop stops')
   rpc.call = originalCall
 }
+
+console.log('a page opened in the background')
+// The loop waits while the window is hidden, but not for its first answer: a
+// tab opened behind another must not be blank the moment it is shown. A
+// fresh evaluation of the module, so the feed starts from nothing.
+{
+  const held = []
+  const periodCalls = () => payloads.filter((p) => p && p.action === 'periods')
+  const originalCall = rpc.call
+  rpc.call = (channel, endpoint, payload) => {
+    calls.push('rpc:' + endpoint)
+    payloads.push(payload)
+    if (endpoint !== 'periods') return Promise.resolve({ ok: true, value: {} })
+    return new Promise((resolve) => held.push((value) => resolve({ ok: true, value })))
+  }
+  globalThis.document.hidden = true
+  await import(pathToFileURL(clientPath).href + '?hidden')
+  calls.length = 0
+  payloads.length = 0
+  applyWithChannel()
+  const cleanups = []
+  react.runEffect = (fn) => { const c = fn(); if (typeof c === 'function') cleanups.push(c) }
+  react.sets = []
+  components['sidebar.footer.action']({})
+  await new Promise((r) => setTimeout(r, 0))
+  assert(periodCalls().length === 1, 'the first answer is still fetched while hidden')
+  held.shift()({ rev: 'h1', periods: { day: 1, month: 1, all: 1 }, fx: { USD: 1 } })
+  await new Promise((r) => setTimeout(r, 0))
+  assert(react.sets.some((v) => v && v.data && v.data.periods && v.data.periods.day === 1), 'and shown')
+  assert(periodCalls().length === 1, 'but the long poll waits until the window is seen')
+  cleanups.forEach((c) => c())
+  react.runEffect = () => {}
+  delete globalThis.document.hidden
+  rpc.call = originalCall
+}
 delete globalThis.fetch
 
 // Read the source once: several checks below are lints over what ships rather
