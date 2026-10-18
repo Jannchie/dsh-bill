@@ -86,6 +86,12 @@ console.log('a stored document is coerced, not trusted')
 const junk = await ask({ action: 'prefs-set', patch: { currency: '' } })
 assert(junk.prefs.currency === 'CNY', 'an empty currency falls back to CNY (got ' + JSON.stringify(junk.prefs.currency) + ')')
 
+console.log('the sidebar panel icon is a surface like the others')
+assert(initial.prefs.showPanellist === true, 'shown by default (got ' + initial.prefs.showPanellist + ')')
+const hidden = await ask({ action: 'prefs-set', patch: { showPanellist: false } })
+assert(hidden.prefs.showPanellist === false, 'can be turned off')
+assert(hidden.prefs.showSidebar === true, 'without touching the sidebar spend')
+
 fs.rmSync(HOME, { recursive: true, force: true })
 
 if (failed) { console.error(`\n${failed} check(s) failed`); process.exit(1) }
