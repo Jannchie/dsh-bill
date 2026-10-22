@@ -29,6 +29,7 @@ dsh plugin --profile web add dsh-bill
 - **预算** —— 日 / 月 / 累计额度,超 80% 变黄,超支变红。
 - **多币种** —— 实时汇率,约 166 种货币;各模型基础单价按其官方定价货币显示。
 - **agent 工具** —— `bill_stats`,模型可直接回答花费相关的问题,可按往前若干天或某个自然日(`today`、`yesterday`、`YYYY-MM-DD`)查询。插件配置里 `agentTool: false` 则不注册它 —— 适合从不在会话里问花费、也不想每次请求都为它的 schema 付费的人。
+- **网页搜索与抓取按次计费** —— DeepSeek 的 web Search / Fetch 是按成功请求收费的独立服务:插件包装 `web` 服务的 `search` / `fetch`,每次成功调用记一笔按次费用(`requests` / `requestUsd` / `requestKinds`),失败调用不计;多 query 的 `web_search` 会拆成多次请求分别计数;本地 `http` 抓取不计费。费用出现在报告里的「网页搜索与抓取」区块、按模型表、会话/账户合计与 `bill_stats` 中,Messages 路由的单次请求最多可跑 5 次服务端搜索且用量字段不可观测,故按每次调用记 1 次并用 `≥N` 标出这是下界。
 - 中英文跟随 DSH 语言设置;安装前的历史可从会话日志回填。
 
 ## 与同类插件的差异
@@ -70,6 +71,7 @@ dsh plugin --profile web add dsh-bill
 - models.dev + OpenRouter 双目录,24h 缓存并落盘,失败回退内置历史快照;
 - DeepSeek 官方直连价覆盖目录报价,按调用时刻自动选择峰谷价;
 - 提示词缓存写入按 provider 报告的实际时长计价:用量报告带 `cacheWrite1hTokens`(`cacheWriteTokens` 中写入 1 小时缓存的部分,Anthropic 在路由请求长缓存时返回)时,这部分按 1 小时写入计价,其余按 5 分钟写入计价;没有该字段时全部按 5 分钟写入计价;
+- DeepSeek 网页 Search / Fetch 按成功请求计价:CNY 5 / 1000 次,按价目表同一固定比率 1 CNY = 0.15 USD 折算;默认 `vendor` 口径复刻官方规则(Messages 路由在 2026-11-01 00:00 北京时间前免费、之后按次计费,独立 Search / Fetch API 自上线起计费),`webRequestPricing: 'reference'` 则可从第一次调用起就按参考价计费;
 - 模型名归一化,匹配不到的标记为「?」,不参与合计 —— 不估算;
 - `priceOverrides` 可覆盖或新增任意价格(通常用不到)。
 
@@ -90,7 +92,7 @@ dsh plugin --profile web add dsh-bill
 
 预算、预算货币、所有数字共用的显示货币,以及各处界面是否显示,都在设置里的「费用统计」页设定,存于 `$DSH_HOME/dsh-bill/prefs.json`。两种货币是两个独立设置:预算货币是那句承诺(「每月 100 元」),不随显示货币变动。(不走 DSH 自己的设置文档:它的 API 代理只向浏览器暴露一份固定的命名空间白名单,插件的命名空间在那里既读不到也写不了。)
 
-`maxRecords`(内存环形缓冲条数,默认 20000)、`agentTool`(是否注册 `bill_stats`,默认 `true`)、`backfillTimeoutMs`(启动时历史导入的总预算,默认 60000 毫秒)、`rateCurrency`(一个 ISO 货币代码,如 `USD`,让所有模型的基础单价都用它显示,而不是各厂商自己的标价货币 —— 在 DeepSeek 国际站按美元结算时有用)、`dshHome`(存储所在的 harness home,优先于 `$DSH_HOME` —— 与 harness 自带存储插件的同名配置一致,用于一个进程承载多个 harness 实例、各自记账的场景)与 `priceOverrides` 走插件配置,会在启动时校验 —— 写错的字段会指名报错,而不是让报告静静地空掉。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
+`maxRecords`(内存环形缓冲条数,默认 20000)、`agentTool`(是否注册 `bill_stats`,默认 `true`)、`backfillTimeoutMs`(启动时历史导入的总预算,默认 60000 毫秒)、`rateCurrency`(一个 ISO 货币代码,如 `USD`,让所有模型的基础单价都用它显示,而不是各厂商自己的标价货币 —— 在 DeepSeek 国际站按美元结算时有用)、`dshHome`(存储所在的 harness home,优先于 `$DSH_HOME` —— 与 harness 自带存储插件的同名配置一致,用于一个进程承载多个 harness 实例、各自记账的场景)、`webRequests`(是否记录网页 Search / Fetch 按次费用,默认 `true`)、`webRequestPricing`(`vendor` 或 `reference`,默认 `vendor`;后者从第一次调用起按参考价计费)与 `priceOverrides` 走插件配置,会在启动时校验 —— 写错的字段会指名报错,而不是让报告静静地空掉。`~/.dsh/profiles/web/cordis.patch.yml` 只在需要覆盖价格时才用得上:
 
 ```yaml
 - insert:
@@ -107,7 +109,7 @@ dsh plugin --profile web add dsh-bill
 
 ## 数据与隐私
 
-- 记录每次调用的 provider / model / token 用量及归因金额,落盘至 `$DSH_HOME/dsh-bill/records.jsonl`(2 万条环形缓冲,更早的折叠为汇总);
+- 记录每次模型调用与网页请求的 provider / model / token 用量、按次费用及归因金额,落盘至 `$DSH_HOME/dsh-bill/records.jsonl`(2 万条环形缓冲,更早的折叠为汇总);
 - 账户余额的 API key 在 host 侧解析与使用,不进入浏览器;
 - 除价格目录、汇率接口与余额查询外不发送任何数据;不保存任何对话内容。
 
@@ -117,6 +119,7 @@ dsh plugin --profile web add dsh-bill
 | --- | --- |
 | 捕获 | 监听 `llm/stream` waterfall,包装流观察 `usage` chunk,原样透传 |
 | 计价 | 按调用时刻交由 `llm-pricing` 解析目录 / 峰谷 / 覆盖价 |
+| 网页请求 | 包装 `web` 服务的 `search` / `fetch`:每次成功调用记一笔按次费用,按提供方路由决定是否计费,失败请求不计 |
 | 归因 | 捕获时切分请求为分类片段,按缓存前缀位置分摊 |
 | 回填 | 会话日志只列一次,以可取消的预算导入未记录的会话,按 `turn:step` 去重 |
 | 每轮 | `billTurns` session projection:host 侧折叠会话日志,推送到客户端,无轮询;`billLive` 另发一条只含在途输出的估算 |
