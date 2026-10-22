@@ -29,6 +29,7 @@ Restart `dsh web` to pick it up.
 - **Budget** — a daily / monthly / all-time limit that turns amber past 80% and red when you go over.
 - **Multi-currency** — live rates for ~166 currencies; each model's base rate is shown in the currency its vendor prices it in.
 - **Agent tool** — `bill_stats`, so the model can answer questions about spend directly, over a number of days back or one calendar day (`today`, `yesterday`, `YYYY-MM-DD`). `agentTool: false` in the plugin config leaves it unregistered, for anyone who never asks the model about spend and would rather not pay its schema on every request.
+- **Web Search / Fetch billed per request** — DeepSeek's web Search and Fetch services charge per successful request. The plugin wraps the `web` service's `search` / `fetch`, records one fee per successful call (`requests` / `requestUsd` / `requestKinds`) and nothing for a failed one; a multi-query `web_search` is counted as one request per query; a local `http` fetch is never billed. The fees appear in the report's Web Search & Fetch section, the by-model table, session/account totals and `bill_stats`. The Messages route can run up to five server-side searches inside one request and does not expose that count, so each call is counted once and marked as a lower bound (`≥N`).
 - English and Chinese follow the DSH language setting; history from before the install is backfilled from the session log.
 
 ## How it differs from similar plugins
@@ -70,6 +71,7 @@ The sample is the cost-related plugins under the GitHub `dsh-plugin` topic with 
 - two catalogues, models.dev and OpenRouter, cached for 24h and written to disk, falling back to a built-in historical snapshot on failure;
 - DeepSeek's own direct rates override the catalogue, and the peak / off-peak rate is chosen from the call's timestamp;
 - a prompt-cache write is priced at the lifetime the provider reports it bought: when the usage report carries `cacheWrite1hTokens` (the one-hour share of `cacheWriteTokens`, which Anthropic returns for a route that asks for the long cache), that share is billed as a one-hour write and the rest as a five-minute write; without it every write is a five-minute write;
+- DeepSeek's web Search / Fetch is priced per successful request: CNY 5 per 1,000 requests, converted at the same fixed 1 CNY = 0.15 USD ratio as the catalogue cards. The default `vendor` mode reproduces the published rules (Messages-route searches free until 2026-11-01 00:00 Beijing time, then billed; the standalone Search / Fetch API billed from launch); `webRequestPricing: 'reference'` prices every request from its first call instead;
 - model names are normalised, and anything that still fails to match is flagged `?` and excluded from totals — nothing is estimated;
 - `priceOverrides` can override or add any price (rarely needed).
 
@@ -90,7 +92,7 @@ The session log holds token counts and model routes but **not the request bodies
 
 The budget, its currency, the display currency shared by every figure, and which surfaces are shown are all set on the **Cost** page in settings, and stored in `$DSH_HOME/dsh-bill/prefs.json`. The two currencies are separate settings: the budget's is the promise ("¥100 a month") and does not follow the display. (Not in the harness's own settings document: its API proxy serves a fixed allowlist of namespaces to the browser, so a plugin's namespace is never readable or writable from there.)
 
-`maxRecords` (the in-memory ring buffer size, default 20000), `agentTool` (register `bill_stats`, default `true`), `backfillTimeoutMs` (the total budget for the boot-time history import, default 60000), `rateCurrency` (one ISO currency code, such as `USD`, to show every model's base rate in instead of its vendor's own list currency — useful when you buy DeepSeek on its international platform, which bills in USD), `dshHome` (the harness home to keep the store under instead of `$DSH_HOME` — the same option the harness's own stores take, for a process that hosts several harness instances, each with its own spend) and `priceOverrides` are plugin config and are validated at startup — a mistyped field is reported by name rather than leaving the report quietly empty. `~/.dsh/profiles/web/cordis.patch.yml` is only needed when you want to override a price:
+`maxRecords` (the in-memory ring buffer size, default 20000), `agentTool` (register `bill_stats`, default `true`), `backfillTimeoutMs` (the total budget for the boot-time history import, default 60000), `rateCurrency` (one ISO currency code, such as `USD`, to show every model's base rate in instead of its vendor's own list currency — useful when you buy DeepSeek on its international platform, which bills in USD), `dshHome` (the harness home to keep the store under instead of `$DSH_HOME` — the same option the harness's own stores take, for a process that hosts several harness instances, each with its own spend), `webRequests` (record web Search / Fetch per-request fees, default `true`), `webRequestPricing` (`vendor` or `reference`, default `vendor`; the latter prices from the first call) and `priceOverrides` are plugin config and are validated at startup — a mistyped field is reported by name rather than leaving the report quietly empty. `~/.dsh/profiles/web/cordis.patch.yml` is only needed when you want to override a price:
 
 ```yaml
 - insert:
@@ -107,7 +109,7 @@ The budget, its currency, the display currency shared by every figure, and which
 
 ## Data and privacy
 
-- each call's provider / model / token usage and attributed amounts are written to `$DSH_HOME/dsh-bill/records.jsonl` (a 20 000-entry ring buffer; older entries are folded into a rollup);
+- each model call's and web request's provider / model / token usage, per-request fee and attributed amounts are written to `$DSH_HOME/dsh-bill/records.jsonl` (a 20 000-entry ring buffer; older entries are folded into a rollup);
 - the API key used for the account balance is read and used host-side and never reaches the browser;
 - nothing is sent anywhere except the price catalogues, the exchange-rate endpoint, and the balance query; no conversation content is stored.
 
@@ -117,6 +119,7 @@ The budget, its currency, the display currency shared by every figure, and which
 | --- | --- |
 | Capture | hooks the `llm/stream` waterfall, wraps the stream to observe `usage` chunks, passes everything through untouched |
 | Pricing | `llm-pricing` resolves catalogue / peak rate / override at the call's own instant |
+| Web requests | wraps the `web` service's `search` / `fetch`: one line per successful call, billed only for DeepSeek's providers, failed calls excluded |
 | Attribution | the request is split into classified segments at capture time and apportioned by position in the cache prefix |
 | Backfill | lists the session log once, imports sessions it never recorded with a cancellable budget, deduplicating on `turn:step` |
 | Per turn | the `billTurns` session projection folds the session log host-side and pushes to the client — no polling; `billLive` pushes the open step's estimated output as its own small value |
