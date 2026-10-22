@@ -9,8 +9,9 @@
  * Run: node tests/projection.test.js
  */
 import plugin, { Config } from '../lib/index.js'
-import { billLiveProjection as live, billTurnsProjection as unit } from '../lib/projection.js'
-import { mergeOverrides } from '../lib/pricing.js'
+import { billLiveProjection as live, billTurnsProjection as unit, createProjections } from '../lib/projection.js'
+import { mergeOverrides, priceRecord } from '../lib/pricing.js'
+import { REQUEST_FREE_UNTIL_MS, REQUEST_PRICE_USD } from '../lib/requests.js'
 
 let failed = 0
 function assert(cond, msg) {
@@ -277,6 +278,104 @@ console.log('the plugin declares no hard dependency')
 assert(Array.isArray(plugin.inject) && plugin.inject.length === 0,
   'inject is empty, so a carrier-less assembly still records (got ' + JSON.stringify(plugin.inject) + ')')
 assert(plugin.Config === Config, 'the plugin exposes its schema to the loader')
+
+
+console.log('web Search requests fold into the turn that dispatched them')
+const USD = REQUEST_PRICE_USD.search
+const FREE = REQUEST_FREE_UNTIL_MS
+const searchCall = (callId, queries, time, turn = 1) => event('tool/call', {
+  turn, step: 1, callId, name: 'web_search', arguments: JSON.stringify({ queries }),
+}, time)
+const searchResult = (callId, time, isError = false, turn = 1) => event('tool/result', {
+  turn, step: 1, message: { toolCallId: callId, isError },
+}, time)
+const nearUsd = (actual, expected, msg) => assert(Math.abs(actual - expected) < 1e-12, `${msg} (got ${actual}, want ${expected})`)
+
+// Vendor mode: two unique queries before the cutoff are counted but cost zero.
+{
+  const state = fold([
+    searchCall('w1', ['a', 'a', 'b'], FREE - 2_000),
+    searchResult('w1', FREE - 1_000),
+  ])
+  const value = unit.view(state)
+  assert(value.requests === 2, 'two unique queries become two requests')
+  nearUsd(value.totalUsd, 0, 'the Messages-route grace window prices them at zero')
+}
+{
+  const state = fold([
+    searchCall('w2', ['a'], FREE - 1_000),
+    searchResult('w2', FREE),
+  ])
+  nearUsd(unit.view(state).totalUsd, USD, 'a request at the cutoff is billed')
+}
+{
+  const state = fold([
+    searchCall('w3', ['a'], FREE),
+    searchResult('w3', FREE + 1_000, true),
+  ])
+  assert(unit.view(state).requests === 0, 'a failed search is not billed')
+}
+{
+  const state = fold([
+    searchCall('w4', ['a', ' a '], FREE),
+    searchResult('w4', FREE + 1_000),
+  ])
+  assert(unit.view(state).requests === 2, 'query dedupe matches the tool: raw strings, so " a " is a second query')
+}
+{
+  // A billed request joins the turn's usage row instead of making a second one.
+  const state = fold([
+    HEADER,
+    searchCall('w5', ['a'], FREE),
+    searchResult('w5', FREE + 1_000),
+    event('assistant/message', { turn: 1, step: 1, usage: usage(1000, 100), message: { source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } } }, FREE + 2_000),
+  ])
+  const value = unit.view(state)
+  assert(value.turns.length === 1 && value.turns[0].calls === 1, 'one turn row carries both usage and the request')
+  assert(value.turns[0].requests === 1, 'the wire row exposes the request count')
+  assert(value.totalUsd > USD, 'the total is token cost plus the request fee (token card from llm-pricing)')
+}
+{
+  const state = fold([
+    event('tool/call', { turn: 1, step: 1, callId: 'f1', name: 'web_fetch', arguments: JSON.stringify({ url: 'https://example.com' }) }, FREE),
+    event('tool/result', { turn: 1, step: 1, message: { toolCallId: 'f1', isError: false } }, FREE + 1),
+  ])
+  assert(unit.view(state).requests === 0, 'web_fetch is not folded: the durable log cannot tell a local http fetch from the billed API')
+}
+{
+  // Reference mode: same pre-cutoff event, billed from the first call.
+  const reference = createProjections(priceRecord, 'reference').billTurnsProjection
+  const state = [searchCall('r1', ['a'], FREE - 1_000), searchResult('r1', FREE - 500)]
+    .reduce((acc, ev) => reference.apply(acc, ev), reference.init())
+  nearUsd(reference.view(state).totalUsd, USD, 'reference mode prices a pre-cutoff request')
+}
+
+
+console.log('the per-turn row cap keeps request money and prices the aged-out tokens')
+{
+  // 405 request turns after one token turn: the token row ages out, the request
+  // rows are capped at 400, and the view must still report every fee once.
+  const events = [event('request/header', {
+    header: { config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } },
+  }, FREE)]
+  events.push(event('assistant/message', {
+    turn: 1, step: 1, usage: usage(1000, 100),
+    message: { source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } },
+  }, FREE + 1))
+  for (let i = 0; i < 405; i++) {
+    events.push(searchCall('cap' + i, ['q'], FREE + 2 + i, i + 2))
+    events.push(searchResult('cap' + i, FREE + 2 + i, false, i + 2))
+  }
+  const state = fold(events)
+  const value = unit.view(state)
+  const token = priceRecord({
+    model: 'deepseek-v4-flash', time: FREE + 1,
+    inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0,
+  }).usd
+  assert(value.turns.length === 400, 'turn rows are capped at 400')
+  assert(value.requests === 405, 'every request is counted')
+  nearUsd(value.totalUsd, token + 405 * USD, 'the capped view keeps the aged-out token cost and all request fees')
+}
 
 console.log(failed === 0 ? '\nALL PASSED' : `\n${failed} FAILED`)
 process.exit(failed === 0 ? 0 : 1)
