@@ -234,6 +234,9 @@ applyWithChannel()
 assert(calls.length === 1 && calls[0] === 'http:session-cost', 'the hover card makes one session-cost call (got ' + calls.join(', ') + ')')
 assert(payloads[0]?.sessionId === 's9', 'the call is scoped to the hovered session')
 
+/** The client rests one cadence between live polls; wait past it in tests. */
+const POLL_REST_WAIT = 3050
+
 /** Hold every `periods` request in `held` until a test answers it. */
 function holdPeriods(held) {
   answer = (payload) => (payload.action !== 'periods'
@@ -264,17 +267,25 @@ console.log('account-wide spend, long-polled')
   held.shift()({ rev: 'r1', periods: { day: 1, month: 1, all: 1 }, fx: { USD: 1 } })
   await new Promise((r) => setTimeout(r, 0))
   assert(react.sets.some((v) => v && v.data && v.data.periods && v.data.periods.day === 1), 'the answer reaches the surfaces')
-  assert(periodCalls().length === 2, 'the next request goes out at once')
-  assert(periodCalls()[1].sinceRev === 'r1' && periodCalls()[1].waitMs === 25000, 'carrying the rev it holds, to be held until spend moves')
+  // An answered poll rests one cadence before asking again, so a settled
+  // request does not hold its connection slot back-to-back (a 3s poll every
+  // 3s would crowd the browser's 6-slot per-host HTTP/1.1 pool).
+  assert(periodCalls().length === 1, 'an answered poll rests one cadence before asking again (got ' + periodCalls().length + ')')
+
+  await new Promise((r) => setTimeout(r, POLL_REST_WAIT))
+  assert(periodCalls().length === 2, 'the next request goes out after the rest')
+  assert(periodCalls()[1].sinceRev === 'r1' && periodCalls()[1].waitMs === 3000, 'carrying the rev it holds, to be held until spend moves')
 
   const before = react.sets.length
   held.shift()({ rev: 'r1', periods: { day: 1, month: 1, all: 1 }, fx: { USD: 1 } })
   await new Promise((r) => setTimeout(r, 0))
   assert(react.sets.length === before, 'a wait that ran out with nothing new re-renders nothing')
 
+  await new Promise((r) => setTimeout(r, POLL_REST_WAIT))
   held.shift()({ rev: 'r2', periods: { day: 2, month: 2, all: 2 }, fx: { USD: 1 } })
   await new Promise((r) => setTimeout(r, 0))
   assert(react.sets.some((v) => v && v.data && v.data.periods && v.data.periods.day === 2), 'moved spend is shown')
+  await new Promise((r) => setTimeout(r, POLL_REST_WAIT))
   assert(periodCalls().at(-1).sinceRev === 'r2', 'and the loop follows the new rev')
 
   console.log('an older host, without a rev')
